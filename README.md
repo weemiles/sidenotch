@@ -82,19 +82,26 @@ windows with far more tokens than a rejected one can pass fine, so token count
 alone is not the metric either.
 
 So the Claude gauge is **price-weighted spend in the current 5-hour window
-divided by a budget you set**, and the panel labels it `추정` (estimate). It is a
-sense of how much you have burned, not a quota warning. The Codex gauge is the
-server's own number and needs no such caveat.
+divided by what a full window costs on your account**, and the panel labels it as
+an estimate. The Codex gauge is the server's own number and needs no such caveat.
+
+That denominator is worked out from your own history on first run, because a
+figure baked into the app would mean nothing on anyone else's machine. Windows
+that Claude Code actually refused are the best signal — it records a `five_hour`
+rejection with the reset time, and the spend in the window ending there is about
+where that account runs out — and the median of those becomes the budget. With no
+refusals on record it falls back to the 90th percentile of your own windows. It
+re-derives daily; putting a number in `claudeFiveHourBudgetUSD` pins it instead.
 
 Weighting uses list-price ratios per model and cache type (Opus/Sonnet/Haiku,
 5m/1h cache writes, cache reads). Only the ratios matter, not the absolute
 dollars.
 
-### Picking a budget
+### Overriding the budget
 
-`claudeFiveHourBudgetUSD` is just where the gauge hits empty. Watch it for a few
-days: if it is always green, lower it; always red, raise it. The default suits
-heavy use and will read green for lighter sessions.
+Nothing to set up — it calibrates itself. If the result does not match how the
+limit feels, put your own number in `claudeFiveHourBudgetUSD` and it stops
+deriving one.
 
 ## App shortcuts
 
@@ -117,7 +124,7 @@ rail without lengthening what pops out.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `claudeFiveHourBudgetUSD` | `400` | Where the Claude gauge reads empty |
+| `claudeFiveHourBudgetUSD` | *(auto)* | Where the Claude gauge reads empty. Omit it to derive from your history |
 | `fastPollSeconds` | `2` | Live sessions and the Codex tail |
 | `slowPollSeconds` | `20` | Claude token log scan |
 | `showClaude` / `showCodex` | `true` | Which gauges to show |

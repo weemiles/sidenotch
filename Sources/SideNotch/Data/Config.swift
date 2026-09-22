@@ -3,9 +3,14 @@ import Foundation
 /// User-editable settings. Lives at ~/.config/sidenotch/config.json and is
 /// re-read whenever the file changes, so edits apply without a restart.
 struct Config: Codable, Equatable {
-    /// Claude Code does not expose the real limit locally, so the ring is
-    /// "weighted spend in the current 5h window / this budget".
-    var claudeFiveHourBudgetUSD: Double = 400
+    /// What a full 5-hour window costs on this account. `nil` — the default —
+    /// works it out from your own history, which is the only way the gauge means
+    /// anything on someone else's machine. Set a number to pin it.
+    var claudeFiveHourBudgetUSD: Double?
+
+    /// Last auto-derived value and when, so the scan runs once a day at most.
+    var claudeBudgetAutoUSD: Double?
+    var claudeBudgetAutoAt: Date?
 
     /// Seconds between cheap polls (live sessions, Codex tail).
     var fastPollSeconds: Double = 2
@@ -33,12 +38,23 @@ struct Config: Codable, Equatable {
     /// Kept only so an older config file still decodes.
     private var verticalAnchor: Double?
 
+    /// Whatever the gauge should divide by right now.
+    var effectiveBudgetUSD: Double { claudeFiveHourBudgetUSD ?? claudeBudgetAutoUSD ?? 100 }
+
+    var needsCalibration: Bool {
+        guard claudeFiveHourBudgetUSD == nil else { return false }
+        guard let at = claudeBudgetAutoAt, claudeBudgetAutoUSD != nil else { return true }
+        return Date().timeIntervalSince(at) > 24 * 3600
+    }
+
     init() {}
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Config()
-        claudeFiveHourBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .claudeFiveHourBudgetUSD) ?? d.claudeFiveHourBudgetUSD
+        claudeFiveHourBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .claudeFiveHourBudgetUSD)
+        claudeBudgetAutoUSD = try c.decodeIfPresent(Double.self, forKey: .claudeBudgetAutoUSD)
+        claudeBudgetAutoAt = try c.decodeIfPresent(Date.self, forKey: .claudeBudgetAutoAt)
         fastPollSeconds = try c.decodeIfPresent(Double.self, forKey: .fastPollSeconds) ?? d.fastPollSeconds
         slowPollSeconds = try c.decodeIfPresent(Double.self, forKey: .slowPollSeconds) ?? d.slowPollSeconds
         showClaude = try c.decodeIfPresent(Bool.self, forKey: .showClaude) ?? d.showClaude

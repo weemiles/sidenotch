@@ -19,21 +19,44 @@ final class UsageStore: ObservableObject {
     private var scanning = false
 
     func start() {
-        claude.budgetUSD = config.claudeFiveHourBudgetUSD
+        claude.budgetUSD = config.effectiveBudgetUSD
         if let demo = DemoValues.current {
             // Hold the numbers still for a recording: no timers, no disk reads.
-            claude = demo.claude(budget: config.claudeFiveHourBudgetUSD)
+            claude = demo.claude(budget: config.effectiveBudgetUSD)
             codex = demo.codex
             return
         }
         scheduleTimers()
         pollFast()
         pollSlow()
+        calibrateIfNeeded()
+    }
+
+    /// Derives the budget from this account's own history, off the main thread.
+    /// Without it the gauge divides by a number that meant something only on the
+    /// machine it was written on.
+    private func calibrateIfNeeded() {
+        guard config.needsCalibration else { return }
+        queue.async {
+            guard let derived = ClaudeCalibrator.derive() else { return }
+            Task { @MainActor in
+                var cfg = self.config
+                cfg.claudeBudgetAutoUSD = derived
+                cfg.claudeBudgetAutoAt = Date()
+                cfg.save()
+                self.config = cfg
+                self.claude.budgetUSD = cfg.effectiveBudgetUSD
+                if ProcessInfo.processInfo.environment["SIDENOTCH_DEBUG"] != nil {
+                    let line = "calibrate: budget $\(Int(derived)) per 5h window\n"
+                    FileHandle.standardError.write(Data(line.utf8))
+                }
+            }
+        }
     }
 
     func reloadConfig() {
         config = Config.load()
-        claude.budgetUSD = config.claudeFiveHourBudgetUSD
+        claude.budgetUSD = config.effectiveBudgetUSD
         guard DemoValues.current == nil else { return }
         scheduleTimers()
     }
@@ -98,7 +121,7 @@ final class UsageStore: ObservableObject {
                 self.claude.windowEnd = window?.end
                 self.claude.costUSD = window?.cost ?? 0
                 self.claude.totalTokens = window?.tokens ?? 0
-                self.claude.budgetUSD = self.config.claudeFiveHourBudgetUSD
+                self.claude.budgetUSD = self.config.effectiveBudgetUSD
                 self.scanning = false
             }
         }
