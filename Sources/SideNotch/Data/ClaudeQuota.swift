@@ -25,13 +25,13 @@ struct ClaudeQuota: Equatable {
     var limits: [ClaudeLimit]
     var fetchedAt: Date
 
-    /// A model-scoped limit only stops that one model, so it cannot be what the
-    /// rail reports: with Fable spent the account still works on everything else.
-    private var general: [ClaudeLimit] { limits.filter { $0.model == nil } }
-
-    /// The binding constraint — whichever general limit has the least left.
+    /// The weekly allowance across all models: the gauge is there to answer how
+    /// much of this week is left. The five-hour window refills within the day and
+    /// a model-scoped limit only stops that one model, so both go in the panel.
+    /// Should an account report no weekly limit, the tightest one stands in.
     var headline: ClaudeLimit? {
-        (general.isEmpty ? limits : general).min { $0.remaining < $1.remaining }
+        limits.first { $0.kind == "weekly_all" }
+            ?? limits.min { $0.remaining < $1.remaining }
     }
 
     var others: [ClaudeLimit] {

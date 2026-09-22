@@ -78,9 +78,9 @@ nearly gone.
 | Claude 5-hour window (fallback) | `~/.claude/projects/**/*.jsonl` → `message.usage` | **estimate** |
 
 The Claude gauge asks Anthropic for the account's own limits once a minute —
-the numbers `/usage` prints — and shows whichever of the session and weekly
-limits has the least left; a model-scoped limit such as Fable's appears in the
-panel instead, since it only stops that one model. The token is read from the
+the numbers `/usage` prints — and shows the weekly limit across all models — how much of
+this week is left. The five-hour window and model-scoped limits such as Fable's
+are listed in the panel beneath it. The token is read from the
 keychain entry Claude Code already keeps (through `/usr/bin/security`, so no
 prompt) and is never stored, logged or refreshed. When it has expired, or the
 request fails for five minutes, the gauge falls back to the estimate below and
