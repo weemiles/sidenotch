@@ -66,7 +66,7 @@ struct RootView: View {
             ))
         }
         if store.config.showCodex {
-            let p = store.codex.primary
+            let p = store.codex.headline
             out.append(WidgetSpec(
                 id: "codex",
                 logo: BrandMark.openai,

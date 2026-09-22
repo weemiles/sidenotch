@@ -28,23 +28,41 @@ struct CodexWindow: Equatable {
     var usedPercent: Double
     var windowMinutes: Int
     var resetsAt: Date?
+    var updatedAt: Date?
 
     var remaining: Double { max(0, min(1, 1 - usedPercent / 100)) }
 
     var label: String {
+        if windowMinutes >= 43200 { return L.monthly }
         if windowMinutes >= 10080 { return L.weekly }
+        if windowMinutes >= 1440 { return L.days(windowMinutes / 1440, 0) }
         if windowMinutes >= 60 { return L.hours(windowMinutes / 60) }
         return L.minutes(windowMinutes)
     }
 }
 
 struct CodexUsage: Equatable {
-    var primary: CodexWindow?
-    var secondary: CodexWindow?
+    /// The newest reading for each window Codex reports — five-hour, weekly,
+    /// monthly. Which one lands in `primary` varies between records, so they are
+    /// all kept and compared rather than trusting whichever came first.
+    var windows: [CodexWindow] = []
     var planType: String?
     var updatedAt: Date?
 
-    var remaining: Double { primary?.remaining ?? 1 }
+    /// The binding constraint: whichever window has the least left is the one
+    /// about to stop you, so that is the number worth showing.
+    var headline: CodexWindow? {
+        windows.min { $0.remaining < $1.remaining }
+    }
+
+    var others: [CodexWindow] {
+        guard let headline else { return [] }
+        return windows
+            .filter { $0.windowMinutes != headline.windowMinutes }
+            .sorted { $0.remaining < $1.remaining }
+    }
+
+    var remaining: Double { headline?.remaining ?? 1 }
 }
 
 // MARK: - Formatting helpers

@@ -30,11 +30,12 @@ struct DemoValues {
 
     var codex: CodexUsage {
         var usage = CodexUsage()
-        usage.primary = CodexWindow(
+        usage.windows = [CodexWindow(
             usedPercent: (1 - codexRemaining) * 100,
             windowMinutes: 10080,
-            resetsAt: Date().addingTimeInterval(3.5 * 24 * 3600)
-        )
+            resetsAt: Date().addingTimeInterval(3.5 * 24 * 3600),
+            updatedAt: Date()
+        )]
         return usage
     }
 }

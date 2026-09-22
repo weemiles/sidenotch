@@ -68,6 +68,12 @@ Like a battery: the arc shows what is **left**.
 | Shown | Source | Accuracy |
 |---|---|---|
 | Codex usage and reset time | `~/.codex/sessions/**/rollout-*.jsonl` → `rate_limits` | **exact** — the server sends it every turn |
+
+The gauge shows whichever Codex window has the least left — the one about to
+stop you — and the panel lists the rest. Codex reports several (five-hour,
+weekly, monthly) and which one lands in `primary` is not stable, so reading only
+`primary` can show a barely-touched five-hour window while the weekly quota is
+nearly gone.
 | Claude 5-hour window | `~/.claude/projects/**/*.jsonl` → `message.usage` | **estimate** |
 
 Claude Code does not record how much of your quota is gone. The limit is worked
@@ -183,6 +189,12 @@ Sources/SideNotch/
 **Reading Claude's logs cheaply.** They run to hundreds of megabytes. Each file
 is remembered by byte offset and only freshly appended bytes are parsed; events
 older than 12 hours are dropped.
+
+**Which Codex window is "the" limit.** None of them, on their own. The same
+account produces records whose `primary` is the five-hour window, the weekly one
+or the monthly one, so trusting `primary` reports whichever the last request
+happened to carry. Every window is collected instead, keeping the newest reading
+of each, and the tightest one is what the gauge shows.
 
 **Picking the right Codex log.** A rollout file lives in the folder for the day
 its session *started*, so one opened last night and still running today stays in

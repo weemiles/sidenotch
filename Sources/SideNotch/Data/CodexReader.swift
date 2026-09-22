@@ -13,6 +13,8 @@ enum CodexReader {
     /// Only the tail is read; rate limit records appear on every turn, so the most
     /// recent one is always within a few kilobytes of the end.
     private static let tailBytes: UInt64 = 256 * 1024
+    /// Cap on records parsed per file, so a 2-second poll stays cheap.
+    private static let recordsPerFile = 25
 
     /// A session is filed under the day it *started*, so one opened last night and
     /// still running today sits in yesterday's folder while today's folder holds
@@ -21,58 +23,109 @@ enum CodexReader {
     private static let dayLookback = 7
     private static let candidateLimit = 8
 
+    /// Which window lands in `primary` is not stable — the same account produces
+    /// records whose primary is the five-hour window, the weekly one or the
+    /// monthly one. Reading only `primary` therefore shows whichever window the
+    /// last request happened to report, which is how a full weekly quota can
+    /// display as nearly empty. Every window is collected instead, keeping the
+    /// newest reading of each.
     static func read() -> CodexUsage {
-        var newest: CodexUsage?
+        var newest: [Int: CodexWindow] = [:]
+        var planType: String?
+        var latest: Date?
+
         for url in recentRollouts() {
-            guard let usage = lastRecord(in: url), let stamp = usage.updatedAt else { continue }
-            if let best = newest, let bestStamp = best.updatedAt, stamp <= bestStamp { continue }
-            newest = usage
+            for record in records(in: url) {
+                for window in record.windows {
+                    let known = newest[window.windowMinutes]
+                    if known == nil || (window.updatedAt ?? .distantPast)
+                        > (known?.updatedAt ?? .distantPast) {
+                        newest[window.windowMinutes] = window
+                    }
+                }
+                if let stamp = record.stamp, stamp > (latest ?? .distantPast) {
+                    latest = stamp
+                    planType = record.planType
+                }
+            }
         }
-        return newest ?? CodexUsage()
+
+        var usage = CodexUsage()
+        usage.windows = newest.values.sorted { $0.windowMinutes < $1.windowMinutes }
+        usage.planType = planType
+        usage.updatedAt = latest
+
+        if ProcessInfo.processInfo.environment["SIDENOTCH_DEBUG"] != nil {
+            let detail = usage.windows
+                .map { "\($0.windowMinutes)m=\(Int($0.usedPercent))%used" }
+                .joined(separator: " ")
+            // Same rounding as the UI, or the log contradicts the screen by a point.
+            let shown = Fmt.percent(usage.headline?.remaining ?? 0)
+            let line = "codex: \(detail) -> showing \(shown) left\n"
+            FileHandle.standardError.write(Data(line.utf8))
+        }
+        return usage
     }
 
-    private static func lastRecord(in url: URL) -> CodexUsage? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
+    private struct Record {
+        var windows: [CodexWindow]
+        var planType: String?
+        var stamp: Date?
+    }
 
-        guard let size = try? handle.seekToEnd() else { return nil }
+    /// Walks a file's tail backwards. Records are written every turn, so the last
+    /// handful covers every window; the cap keeps a 2-second poll cheap.
+    private static func records(in url: URL) -> [Record] {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
+        defer { try? handle.close() }
+        guard let size = try? handle.seekToEnd() else { return [] }
         try? handle.seek(toOffset: size > tailBytes ? size - tailBytes : 0)
-        guard let data = try? handle.readToEnd() else { return nil }
+        guard let data = try? handle.readToEnd() else { return [] }
 
         let marker = Data("\"rate_limits\"".utf8)
+        var out: [Record] = []
+        var seenWindows = Set<Int>()
+
         for line in data.split(separator: 0x0A).reversed() {
+            guard out.count < recordsPerFile else { break }
             guard line.range(of: marker) != nil else { continue }
             guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
                   let payload = obj["payload"] as? [String: Any],
                   let limits = payload["rate_limits"] as? [String: Any] else { continue }
 
-            var usage = CodexUsage()
-            usage.primary = window(limits["primary"])
-            usage.secondary = window(limits["secondary"])
-            usage.planType = limits["plan_type"] as? String
-            if let ts = obj["timestamp"] as? String {
-                let iso = ISO8601DateFormatter()
-                iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                usage.updatedAt = iso.date(from: ts) ?? {
-                    let plain = ISO8601DateFormatter()
-                    plain.formatOptions = [.withInternetDateTime]
-                    return plain.date(from: ts)
-                }()
-            }
-            // A record with no primary window tells us nothing useful.
-            return usage.primary == nil ? nil : usage
+            let stamp = (obj["timestamp"] as? String).flatMap(date(from:))
+            let windows = [limits["primary"], limits["secondary"]]
+                .compactMap { window($0, stamp: stamp) }
+            guard !windows.isEmpty else { continue }
+
+            out.append(Record(windows: windows,
+                              planType: limits["plan_type"] as? String,
+                              stamp: stamp))
+            windows.forEach { seenWindows.insert($0.windowMinutes) }
+            // Nothing new is coming once every window has been seen a few times.
+            if seenWindows.count >= 3 && out.count >= 4 { break }
         }
-        return nil
+        return out
     }
 
-    private static func window(_ raw: Any?) -> CodexWindow? {
+    private static func date(from iso: String) -> Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = withFraction.date(from: iso) { return d }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return plain.date(from: iso)
+    }
+
+    private static func window(_ raw: Any?, stamp: Date?) -> CodexWindow? {
         guard let d = raw as? [String: Any],
-              let used = d["used_percent"] as? Double else { return nil }
-        let resets = (d["resets_at"] as? Double).map { Date(timeIntervalSince1970: $0) }
+              let used = d["used_percent"] as? Double,
+              let minutes = d["window_minutes"] as? Int, minutes > 0 else { return nil }
         return CodexWindow(
             usedPercent: used,
-            windowMinutes: d["window_minutes"] as? Int ?? 0,
-            resetsAt: resets
+            windowMinutes: minutes,
+            resetsAt: (d["resets_at"] as? Double).map { Date(timeIntervalSince1970: $0) },
+            updatedAt: stamp
         )
     }
 

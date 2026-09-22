@@ -43,6 +43,7 @@ enum L {
 
     // Windows and durations
     static var weekly: String { pick("주간", "Weekly") }
+    static var monthly: String { pick("월간", "Monthly") }
     static func hours(_ n: Int) -> String { pick("\(n)시간", "\(n)h") }
     static func minutes(_ n: Int) -> String { pick("\(n)분", "\(n)m") }
     static func days(_ d: Int, _ h: Int) -> String { pick("\(d)일 \(h)시간", "\(d)d \(h)h") }

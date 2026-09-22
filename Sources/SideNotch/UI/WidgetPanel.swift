@@ -110,7 +110,7 @@ private struct CodexBody: View {
             Header(title: "Codex", trailing: usage.planType)
         }
 
-        if let p = usage.primary {
+        if let p = usage.headline {
             Row(index: 1, shown: shown) {
                 Meter(remaining: p.remaining, color: Theme.tint(remaining: p.remaining))
             }
@@ -143,9 +143,11 @@ private struct CodexBody: View {
                     }
                 }
             }
-            if let s = usage.secondary {
-                Row(index: 4, shown: shown) {
-                    Text(L.secondaryLeft(s.label, Fmt.percent(s.remaining)))
+            // The other windows still matter — showing only the tightest one
+            // hides why the number moved when a different limit takes over.
+            ForEach(Array(usage.others.enumerated()), id: \.element.windowMinutes) { i, w in
+                Row(index: 4 + i, shown: shown) {
+                    Text(L.secondaryLeft(w.label, Fmt.percent(w.remaining)))
                         .font(.system(size: 10))
                         .monospacedDigit()
                         .foregroundStyle(Theme.textTertiary)
