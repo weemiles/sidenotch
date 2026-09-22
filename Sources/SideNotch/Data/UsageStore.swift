@@ -56,7 +56,7 @@ final class UsageStore: ObservableObject {
         scheduleTimers()
         pollFast()
         pollSlow()
-        calibrate()
+        calibrate(forced: Set(accounts.map(\.id)))
     }
 
     // MARK: Accounts
@@ -100,7 +100,13 @@ final class UsageStore: ObservableObject {
     /// where its ceiling is, and waiting a day to notice would leave the gauge
     /// reading full right after it ran out.
     private func calibrate(forced: Set<String> = []) {
-        let due = accounts.filter { forced.contains($0.id) || config.needsCalibration($0) }
+        // A daily refresh only applies to an account that already has a figure.
+        // One that has none is driven by `forced` instead, so an account with no
+        // history yet is not re-scanned every poll for a result that cannot come.
+        let due = accounts.filter {
+            forced.contains($0.id)
+                || (config.claudeBudgetAuto[$0.id] != nil && config.needsCalibration($0))
+        }
         guard !due.isEmpty else { return }
         queue.async { [weak self] in
             let derived = due.compactMap { account in
@@ -222,7 +228,12 @@ final class UsageStore: ObservableObject {
         }
         applyBudgets()
         scanning = false
-        let refused = Set(scans.filter(\.refused).map(\.id))
-        if !refused.isEmpty { calibrate(forced: refused) }
+
+        // An account with no history cannot be calibrated at launch. The moment
+        // its first session turns up, work the budget out — otherwise the gauge
+        // sits on a dash until the app is restarted.
+        let awaiting = claude.filter { $0.budgetBasis == nil && $0.windowEnd != nil }.map(\.id)
+        let refused = scans.filter(\.refused).map(\.id)
+        calibrate(forced: Set(awaiting + refused))
     }
 }
