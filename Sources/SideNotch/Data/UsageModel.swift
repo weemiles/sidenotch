@@ -120,7 +120,12 @@ enum Fmt {
         guard let date else { return nil }
         let f = DateFormatter()
         f.locale = Locale(identifier: L.localeIdentifier)
-        f.dateFormat = Calendar.current.isDateInToday(date) ? "HH:mm" : L.dateFormat
+        // A bare "19:30" leaves you working out which day it means.
+        guard !Calendar.current.isDateInToday(date) else {
+            f.dateFormat = "HH:mm"
+            return L.today(f.string(from: date))
+        }
+        f.dateFormat = L.dateFormat
         return f.string(from: date)
     }
 

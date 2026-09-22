@@ -71,6 +71,7 @@ enum L {
 
     /// Weekday in the reset stamp is what makes a date five days out legible.
     static var dateFormat: String { pick("M/d(E) HH:mm", "MMM d (E) HH:mm") }
+    static func today(_ time: String) -> String { pick("오늘 \(time)", "today \(time)") }
     static var localeIdentifier: String { pick("ko_KR", "en_US") }
 
     // Menu bar
