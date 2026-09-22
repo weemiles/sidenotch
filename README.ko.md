@@ -188,6 +188,31 @@ rollout 파일은 세션이 **시작한 날짜** 폴더에 들어간다. 어젯�
 대부분이 내 로그에 남지 않으므로, 어떤 로컬 추정도 맞을 수 없다. Codex는 서버가
 준 값이라 영향이 없다.
 
+### 한 대에서 계정 두 개 쓰기
+
+`CLAUDE_CONFIG_DIR`을 주면 그 터미널만 별도의 Claude 설정 폴더를 쓰고, 폴더마다
+자격증명이 따로 잡힌다. 구독 두 개를 동시에 로그인해둘 수 있다는 뜻이다.
+SideNotch는 둘 다 잡는다 — `~/.claude`와 그 옆의 `~/.claude-*`를 찾아 레일에
+**1**, **2**로 번호를 붙인다. 패널에는 번호 아래에 계정 이메일이 나오므로 어느
+로그인인지 바로 확인된다.
+
+문제는 트랜스크립트에 계정 표시가 전혀 없다는 것이다. 기록이 떨어지는 폴더가
+유일한 구분 수단이라, 두 계정이 `projects` 폴더를 공유하면 사용량을 나눌 수 없다.
+두 번째 계정에는 제 폴더를 주고, 공유할 것만 링크로 걸면 된다.
+
+```bash
+mkdir ~/.claude-b
+for x in CLAUDE.md agents commands hooks skills plugins; do
+  ln -s ~/.claude/$x ~/.claude-b/$x
+done
+cp ~/.claude/settings.json ~/.claude-b/
+
+CLAUDE_CONFIG_DIR=~/.claude-b claude auth login
+```
+
+한도는 구독마다 다르므로 계정별로 따로 계산한다. 자동 탐색 대신 직접 지정하려면
+설정 파일에 `claudeConfigDirs`를 적으면 된다.
+
 ## 조작
 
 | 동작 | 결과 |

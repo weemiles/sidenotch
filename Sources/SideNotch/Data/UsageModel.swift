@@ -15,7 +15,14 @@ enum ClaudeBudgetBasis: String, Codable, Equatable {
     case manual
 }
 
-struct ClaudeUsage: Equatable {
+struct ClaudeUsage: Equatable, Identifiable {
+    /// The account's config directory path — the only thing that distinguishes
+    /// two logins on one machine, since the transcripts never say.
+    var id: String = ""
+    /// "1", "2", … or empty when there is only one account to show.
+    var label: String = ""
+    var email: String?
+
     /// Start of the current 5-hour block, floored to the hour (ccusage convention).
     var windowStart: Date?
     var windowEnd: Date?

@@ -110,6 +110,32 @@ Weighting uses list-price ratios per model and cache type (Opus/Sonnet/Haiku,
 5m/1h cache writes, cache reads). Only the ratios matter, not the absolute
 dollars.
 
+### Two accounts on one machine
+
+`CLAUDE_CONFIG_DIR` gives a terminal its own Claude config directory, and each
+directory gets its own credential — so two subscriptions can be signed in at
+once. SideNotch picks both up: `~/.claude`, then any `~/.claude-*` beside it,
+numbered **1**, **2**, … on the rail. The panel shows the account's email under
+the number so it is clear which login that is.
+
+The catch is that transcripts carry no account marker at all, so the directory
+they land in is the only thing that tells them apart. Sharing one `projects`
+folder between two logins makes their usage indistinguishable. Give the second
+account a real directory of its own and symlink only the parts worth sharing:
+
+```bash
+mkdir ~/.claude-b
+for x in CLAUDE.md agents commands hooks skills plugins; do
+  ln -s ~/.claude/$x ~/.claude-b/$x
+done
+cp ~/.claude/settings.json ~/.claude-b/
+
+CLAUDE_CONFIG_DIR=~/.claude-b claude auth login
+```
+
+Each account is calibrated separately, since two subscriptions have two limits.
+Set `claudeConfigDirs` in the config file to list them by hand instead.
+
 ### Overriding the budget
 
 Nothing to set up — it calibrates itself. If the result does not match how the

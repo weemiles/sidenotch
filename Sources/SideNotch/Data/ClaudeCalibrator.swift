@@ -26,8 +26,6 @@ enum ClaudeCalibrator {
         let samples: Int
     }
 
-    private static let projects = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/projects")
     private static let lookbackDays = 14
     private static let blockLength: TimeInterval = 5 * 3600
     /// Enough that a brand-new install is not pinned at empty on its first day.
@@ -35,7 +33,7 @@ enum ClaudeCalibrator {
 
     struct Event { let at: Date; let cost: Double }
 
-    static func derive(now: Date = Date()) -> Calibration? {
+    static func derive(projects: URL, now: Date = Date()) -> Calibration? {
         let horizon = now.addingTimeInterval(-Double(lookbackDays) * 24 * 3600)
         var events: [Event] = []
         var refusals: Set<Int> = []

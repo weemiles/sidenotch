@@ -12,8 +12,9 @@ final class ClaudeLogScanner {
 
     private struct Event { let at: Date; let cost: Double; let tokens: Int }
 
-    private let projects = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/projects")
+    /// Which account's transcripts this scanner watches. One per account: the
+    /// byte cursors are per file, so two accounts cannot share an instance.
+    private let projects: URL
 
     /// How far back events are kept. Needs to exceed the 5h block plus one idle gap
     /// so block boundaries can be found without rescanning history.
@@ -26,7 +27,8 @@ final class ClaudeLogScanner {
     /// Set when a five-hour refusal turns up in freshly appended bytes.
     private var refusalSeen = false
 
-    init() {
+    init(projects: URL) {
+        self.projects = projects
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     }
 

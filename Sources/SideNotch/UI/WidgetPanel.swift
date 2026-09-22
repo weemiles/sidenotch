@@ -11,8 +11,8 @@ struct WidgetBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            if spec.id == "claude" {
-                ClaudeBody(usage: store.claude, shown: shown)
+            if let account = store.claude.first(where: { spec.id == "claude:\($0.id)" }) {
+                ClaudeBody(usage: account, shown: shown)
             } else {
                 CodexBody(usage: store.codex, shown: shown)
             }
@@ -51,7 +51,18 @@ private struct ClaudeBody: View {
 
     var body: some View {
         Row(index: 0, shown: shown) {
-            Header(title: "Claude Code", trailing: L.estimate)
+            Header(title: usage.label.isEmpty ? "Claude Code" : "Claude Code \(usage.label)",
+                   trailing: L.estimate)
+        }
+        // A number on the rail only helps if something says which login it is.
+        if let email = usage.email, !usage.label.isEmpty {
+            Row(index: 1, shown: shown) {
+                Text(email)
+                    .font(.system(size: 10))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(Theme.textTertiary)
+            }
         }
 
         if usage.windowEnd != nil, let basis = usage.budgetBasis {

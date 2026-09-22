@@ -8,6 +8,8 @@ struct WidgetSpec: Identifiable {
     let remaining: Double
     let caption: String
     let available: Bool
+    /// "1", "2" … when a second account makes the logo ambiguous. Empty otherwise.
+    var badge: String = ""
 }
 
 /// Reports interactive regions up to the hosting view so everything else stays
@@ -55,17 +57,20 @@ struct RootView: View {
     private var specs: [WidgetSpec] {
         var out: [WidgetSpec] = []
         if store.config.showClaude {
-            // Without a calibrated limit there is nothing honest to divide by,
-            // so the rail shows a dash rather than a made-up percentage.
-            let live = store.claude.windowEnd != nil && store.claude.budgetBasis != nil
-            out.append(WidgetSpec(
-                id: "claude",
-                logo: BrandMark.claude,
-                markColor: Theme.claudeMark,
-                remaining: live ? store.claude.remaining : 1,
-                caption: live ? Fmt.percent(store.claude.remaining) : "–",
-                available: live
-            ))
+            for account in store.claude {
+                // Without a calibrated limit there is nothing honest to divide
+                // by, so the rail shows a dash rather than a made-up percentage.
+                let live = account.windowEnd != nil && account.budgetBasis != nil
+                out.append(WidgetSpec(
+                    id: "claude:\(account.id)",
+                    logo: BrandMark.claude,
+                    markColor: Theme.claudeMark,
+                    remaining: live ? account.remaining : 1,
+                    caption: live ? Fmt.percent(account.remaining) : "–",
+                    available: live,
+                    badge: account.label
+                ))
+            }
         }
         if store.config.showCodex {
             let p = store.codex.headline
@@ -498,15 +503,25 @@ struct RailItem: View {
             )
             .animation(Motion.panel(active: isActive), value: isActive)
 
-            Text(spec.caption)
-                .font(.system(size: 10, weight: .semibold))
-                .monospacedDigit()
-                // The caption is digits only, so its line box carries descender
-                // slack the glyphs never use. Tightening the box to the ink is
-                // what keeps the column optically centred in the island.
-                .frame(height: Metrics.captionHeight)
-                .foregroundStyle(spec.available ? Theme.textSecondary : Theme.textTertiary)
-                .allowsHitTesting(false)
+            HStack(spacing: 3) {
+                // Two Claude logos on one rail are the same drawing, so the
+                // number is the only thing telling them apart. It rides with the
+                // percentage rather than over the mark, which would crowd it.
+                if !spec.badge.isEmpty {
+                    Text(spec.badge)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(spec.markColor)
+                }
+                Text(spec.caption)
+                    .font(.system(size: 10, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(spec.available ? Theme.textSecondary : Theme.textTertiary)
+            }
+            // The caption is digits only, so its line box carries descender
+            // slack the glyphs never use. Tightening the box to the ink is
+            // what keeps the column optically centred in the island.
+            .frame(height: Metrics.captionHeight)
+            .allowsHitTesting(false)
         }
     }
 }

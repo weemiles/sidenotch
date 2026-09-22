@@ -8,12 +8,15 @@ struct Config: Codable, Equatable {
     /// anything on someone else's machine. Set a number to pin it.
     var claudeFiveHourBudgetUSD: Double?
 
-    /// Last auto-derived value, when, and what it rests on, so the scan runs
-    /// once a day at most and the panel can say how much to trust it.
-    var claudeBudgetAutoUSD: Double?
-    var claudeBudgetAutoAt: Date?
-    var claudeBudgetAutoBasis: ClaudeBudgetBasis?
-    var claudeBudgetAutoSamples: Int = 0
+    /// Which Claude config directories to watch, one per account. `nil` — the
+    /// default — finds `~/.claude` and any `~/.claude-*` beside it, which is
+    /// where a second `CLAUDE_CONFIG_DIR` login keeps its transcripts.
+    var claudeConfigDirs: [String]?
+
+    /// Last auto-derived budget per config directory, so the scan runs once a
+    /// day at most and the panel can say how much to trust each figure. Keyed
+    /// by directory because two accounts on one machine have two limits.
+    var claudeBudgetAuto: [String: AutoBudget] = [:]
 
     /// Seconds between cheap polls (live sessions, Codex tail).
     var fastPollSeconds: Double = 2
@@ -41,23 +44,46 @@ struct Config: Codable, Equatable {
     /// Kept only so an older config file still decodes.
     private var verticalAnchor: Double?
 
-    /// Whatever the gauge should divide by right now.
-    var effectiveBudgetUSD: Double { claudeFiveHourBudgetUSD ?? claudeBudgetAutoUSD ?? 100 }
-
-    /// `nil` means nothing has been worked out yet — a fresh install on the
-    /// first run — and the gauge shows no figure rather than a fictional one.
-    var budgetBasis: ClaudeBudgetBasis? {
-        if claudeFiveHourBudgetUSD != nil { return .manual }
-        guard claudeBudgetAutoUSD != nil else { return nil }
-        return claudeBudgetAutoBasis ?? .history
+    struct AutoBudget: Codable, Equatable {
+        var usd: Double
+        var at: Date
+        var basis: ClaudeBudgetBasis
+        var samples: Int
     }
 
-    var budgetSamples: Int { claudeFiveHourBudgetUSD != nil ? 0 : claudeBudgetAutoSamples }
+    /// Whatever the gauge should divide by for this account right now.
+    func effectiveBudgetUSD(for account: ClaudeAccount) -> Double {
+        claudeFiveHourBudgetUSD ?? claudeBudgetAuto[account.id]?.usd ?? 100
+    }
 
-    var needsCalibration: Bool {
+    /// `nil` means nothing has been worked out yet — a fresh install, or an
+    /// account seen for the first time — and the gauge shows no figure rather
+    /// than a fictional one.
+    func budgetBasis(for account: ClaudeAccount) -> ClaudeBudgetBasis? {
+        if claudeFiveHourBudgetUSD != nil { return .manual }
+        return claudeBudgetAuto[account.id]?.basis
+    }
+
+    func budgetSamples(for account: ClaudeAccount) -> Int {
+        claudeFiveHourBudgetUSD != nil ? 0 : (claudeBudgetAuto[account.id]?.samples ?? 0)
+    }
+
+    func needsCalibration(_ account: ClaudeAccount) -> Bool {
         guard claudeFiveHourBudgetUSD == nil else { return false }
-        guard let at = claudeBudgetAutoAt, claudeBudgetAutoUSD != nil else { return true }
-        return Date().timeIntervalSince(at) > 24 * 3600
+        guard let known = claudeBudgetAuto[account.id] else { return true }
+        return Date().timeIntervalSince(known.at) > 24 * 3600
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case claudeFiveHourBudgetUSD, claudeConfigDirs, claudeBudgetAuto
+        case fastPollSeconds, slowPollSeconds, showClaude, showCodex
+        case displayID, edge, anchor, shortcuts, verticalAnchor
+    }
+
+    /// Fields that existed before a machine could hold two accounts. Read only
+    /// on the way in, so an older config file keeps its calibration.
+    private enum LegacyKeys: String, CodingKey {
+        case claudeBudgetAutoUSD, claudeBudgetAutoAt, claudeBudgetAutoBasis, claudeBudgetAutoSamples
     }
 
     init() {}
@@ -66,10 +92,19 @@ struct Config: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Config()
         claudeFiveHourBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .claudeFiveHourBudgetUSD)
-        claudeBudgetAutoUSD = try c.decodeIfPresent(Double.self, forKey: .claudeBudgetAutoUSD)
-        claudeBudgetAutoAt = try c.decodeIfPresent(Date.self, forKey: .claudeBudgetAutoAt)
-        claudeBudgetAutoBasis = try c.decodeIfPresent(ClaudeBudgetBasis.self, forKey: .claudeBudgetAutoBasis)
-        claudeBudgetAutoSamples = try c.decodeIfPresent(Int.self, forKey: .claudeBudgetAutoSamples) ?? 0
+        claudeConfigDirs = try c.decodeIfPresent([String].self, forKey: .claudeConfigDirs)
+        claudeBudgetAuto = try c.decodeIfPresent([String: AutoBudget].self, forKey: .claudeBudgetAuto) ?? [:]
+        // Before there could be a second account the budget was one flat set of
+        // fields; fold it into the map under the account it was derived from.
+        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+        if claudeBudgetAuto.isEmpty,
+           let usd = try legacy.decodeIfPresent(Double.self, forKey: .claudeBudgetAutoUSD),
+           let at = try legacy.decodeIfPresent(Date.self, forKey: .claudeBudgetAutoAt) {
+            claudeBudgetAuto[ClaudeAccounts.defaultConfigDir.path] = AutoBudget(
+                usd: usd, at: at,
+                basis: try legacy.decodeIfPresent(ClaudeBudgetBasis.self, forKey: .claudeBudgetAutoBasis) ?? .history,
+                samples: try legacy.decodeIfPresent(Int.self, forKey: .claudeBudgetAutoSamples) ?? 0)
+        }
         fastPollSeconds = try c.decodeIfPresent(Double.self, forKey: .fastPollSeconds) ?? d.fastPollSeconds
         slowPollSeconds = try c.decodeIfPresent(Double.self, forKey: .slowPollSeconds) ?? d.slowPollSeconds
         showClaude = try c.decodeIfPresent(Bool.self, forKey: .showClaude) ?? d.showClaude
