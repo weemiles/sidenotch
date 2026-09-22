@@ -75,9 +75,42 @@ enum Metrics {
         railPaddingV * 2 + CGFloat(max(gauges, 1)) * rowHeight
     }
 
-    /// Full silhouette height, including the flares at top and bottom.
-    static func islandHeight(gauges: Int, shortcuts: Int) -> CGFloat {
+    /// Size of the rail across the edge it is docked to (its thickness).
+    static var railThickness: CGFloat { railWidth }
+
+    /// Full silhouette length along the edge, flares included.
+    static func islandLength(gauges: Int, shortcuts: Int) -> CGFloat {
         contentHeight(gauges: gauges, shortcuts: shortcuts) + flare * 2
+    }
+
+    // MARK: Bulge sizing
+    //
+    // Text always reads horizontally, so the detail block is the same 248 × gauge
+    // block whichever edge the notch is on. What changes is which of those two
+    // numbers points away from the edge.
+
+    /// Size of the detail block perpendicular to the edge.
+    static func detailAcross(edge: NotchEdge, gauges: Int) -> CGFloat {
+        edge.isVertical ? detailWidth : gaugeBlockHeight(gauges: gauges)
+    }
+
+    /// Size of the detail block along the edge.
+    static func detailAlong(edge: NotchEdge, gauges: Int) -> CGFloat {
+        edge.isVertical ? gaugeBlockHeight(gauges: gauges) : detailWidth
+    }
+
+    /// How far the bulge reaches away from the edge when open.
+    static func bulgeDepth(edge: NotchEdge, gauges: Int) -> CGFloat {
+        panelOverlap + detailAcross(edge: edge, gauges: gauges) + detailPadding
+    }
+
+    /// Everything at its largest, so the window can be sized once.
+    static func islandSize(edge: NotchEdge, gauges: Int, shortcuts: Int) -> CGSize {
+        let across = railThickness + detailAcross(edge: edge, gauges: gauges) + detailPadding
+        let along = max(islandLength(gauges: gauges, shortcuts: shortcuts),
+                        detailAlong(edge: edge, gauges: gauges) + bulgeFillet + flare)
+        return edge.isVertical ? CGSize(width: across, height: along)
+                               : CGSize(width: along, height: across)
     }
 
     /// Slack around the content so shadows and the expand overshoot are not clipped.
@@ -113,6 +146,11 @@ enum Motion {
     static let gooey = Animation.spring(response: 0.50, dampingFraction: 0.58)
     /// Even looser for the rail stretching as it takes on another row.
     static let stretch = Animation.spring(response: 0.42, dampingFraction: 0.66)
+
+    /// Gliding to a snapped edge. Long and heavily eased-out so it reads as
+    /// settling rather than jumping.
+    static let snapDuration: Double = 0.62
+    static let snap = Animation.timingCurve(0.22, 1, 0.36, 1, duration: snapDuration)
 
     static let value = Animation.easeOut(duration: 0.45)
 

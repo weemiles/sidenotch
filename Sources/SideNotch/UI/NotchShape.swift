@@ -1,21 +1,29 @@
 import SwiftUI
 
-/// The rail silhouette: flush against the left screen edge, rounded on the right,
-/// and joined to the edge by two *concave* fillets at top and bottom — the same
-/// inverted corner the macOS notch uses, which is what sells it as part of the bezel
+/// The rail silhouette: flush against its screen edge, rounded on the inner
+/// side, and joined to the edge by two *concave* fillets — the same inverted
+/// corner the macOS notch uses, which is what sells it as part of the bezel
 /// instead of a floating panel.
 ///
-/// The rect it is given includes the fillets, so the body occupies
-/// `rect.insetBy(dy: flare)`.
-struct LeftNotchShape: Shape {
+/// Only the left-edge form is written out. The other edges are the same path
+/// under a transform, which keeps one description of the silhouette instead of
+/// three that can drift apart.
+struct NotchShape: Shape {
+    var edge: NotchEdge
     var cornerRadius: CGFloat = Metrics.railCorner
     var flare: CGFloat = Metrics.flare
 
     func path(in rect: CGRect) -> Path {
+        EdgeTransform.path(for: edge, in: rect) { canonical in
+            leftPath(in: canonical)
+        }
+    }
+
+    private func leftPath(in rect: CGRect) -> Path {
         let f = min(flare, rect.height / 4)
         let bodyTop = rect.minY + f
         let bodyBottom = rect.maxY - f
-        let r = min(cornerRadius, min(rect.width, (bodyBottom - bodyTop) / 2))
+        let r = min(cornerRadius, rect.width, (bodyBottom - bodyTop) / 2)
 
         var p = Path()
         p.move(to: CGPoint(x: rect.minX, y: rect.minY))
@@ -43,23 +51,30 @@ struct LeftNotchShape: Shape {
     }
 }
 
-
-/// The sideways bulge. Its left slice hides under the rail, so that edge is
-/// square — a radius there would curve away from the rail instead of meeting it.
+/// The part that grows away from the edge. Its near side hides under the rail,
+/// so that side is square — a radius there would curve away from the rail
+/// instead of meeting it.
 ///
-/// `bottomFillet` puts a concave curve where the bulge rejoins the rail, the
-/// same inverted corner the rail uses against the screen edge. It is only wanted
-/// when the rail carries on below the bulge; when both end together the bottom
-/// is a plain rounded corner instead.
+/// `farFillet` puts a concave curve where the bulge rejoins the rail further
+/// along the edge, the same inverted corner the rail uses against the screen.
+/// It is only wanted when the rail carries on past the bulge; when both end
+/// together the corner is a plain rounded one.
 struct BulgeShape: Shape {
-    /// Width of the slice that sits behind the rail.
+    var edge: NotchEdge
+    /// Depth of the slice that sits behind the rail.
     var inset: CGFloat
     var corner: CGFloat
-    var bottomFillet: CGFloat
+    var farFillet: CGFloat
 
     func path(in rect: CGRect) -> Path {
+        EdgeTransform.path(for: edge, in: rect) { canonical in
+            leftPath(in: canonical)
+        }
+    }
+
+    private func leftPath(in rect: CGRect) -> Path {
         let ins = min(inset, rect.width)
-        let fillet = min(bottomFillet, rect.height / 3)
+        let fillet = min(farFillet, rect.height / 3)
         let bodyBottom = rect.maxY - fillet
         let r = min(corner, max(0, rect.width - ins) / 2, (bodyBottom - rect.minY) / 2)
 
@@ -88,5 +103,32 @@ struct BulgeShape: Shape {
 
         p.closeSubpath()
         return p
+    }
+}
+
+/// Maps a shape written for the left edge onto whichever edge is in use.
+///
+/// `right` mirrors across the vertical centre. `top` transposes, which swaps the
+/// axes so the flush side lands on y = 0 and the body grows downward; the
+/// canonical rect is built with its width and height swapped to match.
+enum EdgeTransform {
+    static func path(for edge: NotchEdge, in rect: CGRect,
+                     canonical: (CGRect) -> Path) -> Path {
+        switch edge {
+        case .left:
+            return canonical(CGRect(origin: .zero, size: rect.size))
+                .applying(.init(translationX: rect.minX, y: rect.minY))
+        case .right:
+            let mirror = CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: rect.width, ty: 0)
+            return canonical(CGRect(origin: .zero, size: rect.size))
+                .applying(mirror)
+                .applying(.init(translationX: rect.minX, y: rect.minY))
+        case .top:
+            let swapped = CGRect(x: 0, y: 0, width: rect.height, height: rect.width)
+            let transpose = CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: 0, ty: 0)
+            return canonical(swapped)
+                .applying(transpose)
+                .applying(.init(translationX: rect.minX, y: rect.minY))
+        }
     }
 }

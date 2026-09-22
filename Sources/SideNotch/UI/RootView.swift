@@ -91,7 +91,7 @@ struct RootView: View {
     private var bulgeFillet: CGFloat { slotCount > 0 ? Metrics.bulgeFillet : 0 }
 
     var body: some View {
-        ZStack(alignment: .leading) {
+        ZStack(alignment: rootAlignment) {
             Color.clear
             island
         }
@@ -102,67 +102,158 @@ struct RootView: View {
         .onPreferenceChange(DropRectKey.self, perform: onDropRect)
     }
 
+    private var edge: NotchEdge { store.config.edge }
+
+    /// Pins the island to its edge inside the window. Without this it floats in
+    /// the middle and only the left edge happens to look right.
+    private var rootAlignment: Alignment {
+        switch edge {
+        case .left:  return .leading
+        case .right: return .trailing
+        case .top:   return .top
+        }
+    }
+
     /// Rail and bulge are two solid-black shapes, the bulge emerging from
     /// *under* the rail. Same colour, overlapping, so they read as one body —
-    /// but the bulge is only as tall as the gauge rows, so adding shortcuts
-    /// lengthens the rail without lengthening what pops out sideways.
+    /// but the bulge only covers the gauge rows, so adding shortcuts lengthens
+    /// the rail without lengthening what pops out.
     private var island: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: islandAlignment) {
             bulge
-            RailColumn(specs: specs, state: state, store: store)
-                .frame(height: Metrics.contentHeight(gauges: specs.count,
-                                                     shortcuts: slotCount),
-                       alignment: .top)
+            RailColumn(edge: edge, specs: specs, state: state, store: store)
+                .frame(width: railFrame.width, height: railFrame.height,
+                       alignment: railContentAlignment)
                 // The flares are drawn *outside* the content area; without this
-                // margin the notch curves eat into the top and bottom rows.
-                .padding(.vertical, Metrics.flare)
-                .background(LeftNotchShape().fill(Theme.shell))
-                .clipShape(LeftNotchShape())
+                // margin the notch curves eat into the first and last rows.
+                .padding(edge.isVertical ? .vertical : .horizontal, Metrics.flare)
+                .background(NotchShape(edge: edge).fill(Theme.shell))
+                .clipShape(NotchShape(edge: edge))
         }
-        .frame(width: Metrics.expandedWidth,
-               height: Metrics.islandHeight(gauges: specs.count, shortcuts: slotCount),
-               alignment: .topLeading)
+        .frame(width: islandSize.width, height: islandSize.height,
+               alignment: islandAlignment)
         .animation(Motion.stretch, value: slotCount)
     }
 
+    // MARK: Geometry
+
+    private var railLength: CGFloat {
+        Metrics.contentHeight(gauges: specs.count, shortcuts: slotCount)
+    }
+    private var gaugeBlock: CGFloat { Metrics.gaugeBlockHeight(gauges: specs.count) }
+    private var bulgeDepth: CGFloat {
+        isOpen ? Metrics.bulgeDepth(edge: edge, gauges: specs.count) : 0
+    }
+
+    private var railFrame: CGSize {
+        edge.isVertical ? CGSize(width: Metrics.railWidth, height: railLength)
+                        : CGSize(width: railLength, height: Metrics.railWidth)
+    }
+
+    private var islandSize: CGSize {
+        Metrics.islandSize(edge: edge, gauges: specs.count, shortcuts: slotCount)
+    }
+
+    /// The corner the island hangs from: the start of its edge.
+    private var islandAlignment: Alignment {
+        switch edge {
+        case .left:  return .topLeading
+        case .right: return .topTrailing
+        case .top:   return .topLeading
+        }
+    }
+
+    private var railContentAlignment: Alignment {
+        edge.isVertical ? .top : .leading
+    }
+
     private var bulge: some View {
-        ZStack(alignment: .topLeading) {
-            BulgeShape(inset: Metrics.panelOverlap,
+        ZStack(alignment: bulgeContentAlignment) {
+            BulgeShape(edge: edge,
+                       inset: Metrics.panelOverlap,
                        corner: Metrics.detailCorner,
-                       bottomFillet: bulgeFillet)
+                       farFillet: bulgeFillet)
                 .fill(Theme.shell)
 
             if let spec = displayedSpec {
                 WidgetBody(spec: spec, store: store)
                     .frame(width: Metrics.detailWidth,
-                           height: Metrics.gaugeBlockHeight(gauges: specs.count),
+                           height: gaugeBlock,
                            alignment: .leading)
-                    // Clear the slice that sits behind the rail, or the first
-                    // characters of every line disappear under it.
-                    .padding(.leading, Metrics.panelOverlap)
-                    .padding(.trailing, Metrics.detailPadding)
+                    // Clear the slice that sits under the rail, or the first
+                    // characters of every line disappear behind it.
+                    .padding(bulgeNearEdge, Metrics.panelOverlap)
+                    .padding(bulgeFarEdge, Metrics.detailPadding)
                     .opacity(isOpen ? 1 : 0)
             }
         }
-        .frame(width: isOpen ? Metrics.bulgeWidth : 0,
-               height: Metrics.gaugeBlockHeight(gauges: specs.count) + bulgeFillet,
-               alignment: .topLeading)
+        .frame(width: bulgeSize.width, height: bulgeSize.height,
+               alignment: bulgeContentAlignment)
         .clipped()
-        .padding(.leading, Metrics.railWidth - Metrics.panelOverlap)
-        .padding(.top, Metrics.flare)
+        .padding(bulgeNearEdge, Metrics.railThickness - Metrics.panelOverlap)
+        .padding(edge.isVertical ? .top : .leading, Metrics.flare)
         .reportHitRect(isOpen)
+    }
+
+    /// Depth away from the edge, span along it.
+    private var bulgeSize: CGSize {
+        let span = Metrics.detailAlong(edge: edge, gauges: specs.count) + bulgeFillet
+        return edge.isVertical ? CGSize(width: bulgeDepth, height: span)
+                               : CGSize(width: span, height: bulgeDepth)
+    }
+
+    /// The side of the bulge that tucks under the rail.
+    private var bulgeNearEdge: SwiftUI.Edge.Set {
+        switch edge {
+        case .left:  return .leading
+        case .right: return .trailing
+        case .top:   return .top
+        }
+    }
+
+    private var bulgeFarEdge: SwiftUI.Edge.Set {
+        switch edge {
+        case .left:  return .trailing
+        case .right: return .leading
+        case .top:   return .bottom
+        }
+    }
+
+    private var bulgeContentAlignment: Alignment {
+        switch edge {
+        case .left:  return .topLeading
+        case .right: return .topTrailing
+        case .top:   return .topLeading
+        }
+    }
+}
+
+/// Lays its children out along whichever axis the rail runs.
+struct AxisStack<Content: View>: View {
+    let axis: Axis
+    var spacing: CGFloat = 0
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if axis == .vertical {
+            VStack(spacing: spacing) { content }
+        } else {
+            HStack(spacing: spacing) { content }
+        }
     }
 }
 
 struct RailColumn: View {
+    let edge: NotchEdge
     let specs: [WidgetSpec]
     @ObservedObject var state: PanelState
     @ObservedObject var store: UsageStore
 
     private var shortcuts: [Shortcut] { store.config.shortcuts }
+    private var axis: Axis { edge.railAxis }
 
     var body: some View {
-        VStack(spacing: 0) {
+        AxisStack(axis: axis) {
             ForEach(specs) { spec in
                 RailItem(
                     spec: spec,
@@ -170,31 +261,35 @@ struct RailColumn: View {
                     isActive: state.active == spec.id,
                     isPinned: state.pinned == spec.id
                 )
-                .frame(height: Metrics.rowHeight)
+                .frame(width: axis == .horizontal ? Metrics.rowHeight : nil,
+                       height: axis == .vertical ? Metrics.rowHeight : nil)
             }
 
             if !shortcuts.isEmpty || state.dropTargeting {
                 Rectangle()
                     .fill(Theme.hairline)
-                    .frame(width: Metrics.iconDiameter, height: 1)
-                    .padding(.vertical, (Metrics.dividerBlock - 1) / 2)
+                    .frame(width: axis == .vertical ? Metrics.iconDiameter : 1,
+                           height: axis == .vertical ? 1 : Metrics.iconDiameter)
+                    .padding(axis == .vertical ? .vertical : .horizontal,
+                             (Metrics.dividerBlock - 1) / 2)
                     .transition(.opacity)
             }
 
             ForEach(shortcuts) { shortcut in
                 ShortcutItem(shortcut: shortcut, state: state, store: store)
-                    .frame(height: Metrics.shortcutRow)
+                    .frame(width: axis == .horizontal ? Metrics.shortcutRow : nil,
+                           height: axis == .vertical ? Metrics.shortcutRow : nil)
                     .transition(.gooeyDrop)
             }
 
             if state.dropTargeting {
                 DropSlot()
-                    .frame(height: Metrics.shortcutRow)
+                    .frame(width: axis == .horizontal ? Metrics.shortcutRow : nil,
+                           height: axis == .vertical ? Metrics.shortcutRow : nil)
                     .transition(.gooeyDrop)
             }
         }
-        .padding(.vertical, Metrics.railPaddingV)
-        .frame(width: Metrics.railWidth)
+        .padding(axis == .vertical ? .vertical : .horizontal, Metrics.railPaddingV)
         .background(
             GeometryReader { geo in
                 Color.clear.preference(key: DropRectKey.self,
@@ -326,15 +421,15 @@ struct RailItem: View {
             // being dragged, so it reports exactly half the real movement — the
             // controller reads the pointer in screen coordinates instead.
             .gesture(
+                // Starting the drag is all the gesture does; the controller polls
+                // the pointer from there, so rebuilding this view at a corner
+                // cannot interrupt it.
                 DragGesture(minimumDistance: 4)
-                    .onChanged { _ in
-                        state.beginDrag()
-                        state.moveDrag()
-                    }
-                    .onEnded { _ in
-                        state.moveDrag()
-                        state.endDrag()
-                    }
+                    .onChanged { _ in state.beginDrag() }
+                    // Belt and braces: the timer normally sees the button go up,
+                    // but if this view survives the drag the gesture will say so
+                    // first, and finishing twice is a no-op.
+                    .onEnded { _ in state.endDrag() }
             )
             .animation(Motion.panel(active: isActive), value: isActive)
 

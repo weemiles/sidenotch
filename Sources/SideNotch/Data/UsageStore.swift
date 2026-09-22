@@ -46,6 +46,12 @@ final class UsageStore: ObservableObject {
         config = cfg
     }
 
+    /// Update the in-memory config without writing to disk — a drag changes it
+    /// 120 times a second and only the final position is worth persisting.
+    func applyLive(_ cfg: Config) {
+        config = cfg
+    }
+
     func refreshNow() {
         pollFast()
         pollSlow()

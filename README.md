@@ -1,12 +1,18 @@
 # SideNotch
 
-A notch that grows out of the **left edge** of your Mac screen, showing how much
-of your Claude Code and Codex allowance is left. Hover a logo and it stretches
+A notch that grows out of the **edge** of your Mac screen, showing how much of
+your Claude Code and Codex allowance is left. Drag it and it slides along the
+left, top and right edges, turning the corners as it goes. Hover a logo and it stretches
 sideways with the details. Drop apps on it and they become launchers.
 
 **[한국어 README](README.ko.md)**
 
 ![SideNotch idle and expanded](docs/hero.png)
+
+Docked to any of three edges — it rotates to match, and the detail opens away
+from the screen.
+
+![On the left, top and right edges](docs/edges.png)
 
 ```
 idle                 hovering a logo
@@ -110,7 +116,8 @@ rail without lengthening what pops out.
 | `slowPollSeconds` | `20` | Claude token log scan |
 | `showClaude` / `showCodex` | `true` | Which gauges to show |
 | `displayID` | `null` | Which display; `null` means the primary one |
-| `verticalAnchor` | `0.5` | Vertical position; `0` top, `1` bottom |
+| `edge` | `"left"` | Which edge: `left`, `top` or `right` |
+| `anchor` | `0.5` | Position along that edge; `0` start, `1` end |
 | `shortcuts` | `[]` | Dropped apps |
 
 Menu bar → **설정 다시 읽기** to apply edits.
@@ -123,7 +130,7 @@ Menu bar → **설정 다시 읽기** to apply edits.
 | Move to the other logo | Contents swap; size stays put |
 | Click a logo | Pins it open. A green bar appears under the logo |
 | Click again | Unpins |
-| Drag a logo up or down | Moves the island. Saved to `verticalAnchor` |
+| Drag a logo | Slides the notch along the edges, rotating at the corners. Saved on release |
 
 There is a 120ms grace period on leaving a logo so the panel does not snap shut
 while you move into it.
@@ -192,10 +199,20 @@ inset that leaves the shape a few points short of the edge, which kills the whol
 click-through rail never receives them. The whole rail is reported as a hit
 region — the trade-off being that the black body no longer passes clicks.
 
-**Dragging the island.** `DragGesture.translation` is measured in the view, and
-the view rides along with the window being dragged, so it reports exactly half
-the real movement. The controller reads `NSEvent.mouseLocation` in screen
-coordinates and the gesture only signals that a drag is in progress.
+**Dragging along the edges.** Three separate traps. `DragGesture.translation` is
+measured in the view, and the view rides along with the window being dragged, so
+it reports exactly half the real movement. Crossing a corner rebuilds the rail
+from a column into a row, which tears the gesture down mid-drag. And a timer
+scheduled during a drag never fires, because the run loop is in `.eventTracking`
+rather than the default mode. So the gesture only signals that a drag has
+started; a timer registered in `.common` polls `NSEvent.mouseLocation` and
+`NSEvent.pressedMouseButtons` from there.
+
+**One silhouette, three edges.** Only the left-edge path is written out. `right`
+mirrors it, `top` transposes it and is built from a rect with its width and
+height swapped. Text never rotates, so the layout picks a `VStack` or `HStack`
+per edge and the detail block keeps the same size either way — what changes is
+which of its two dimensions points away from the screen.
 
 **Joining the two shapes.** The rail's top-right corner curve and the bulge's
 top-left curve bend opposite ways and leave a dent. The bulge's left corners are

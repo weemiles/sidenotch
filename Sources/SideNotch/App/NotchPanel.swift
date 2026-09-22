@@ -108,7 +108,6 @@ final class PanelState: ObservableObject {
 
     /// Wired up by the controller; SwiftUI has no way to move an NSWindow.
     var dragBegan: (() -> Void)?
-    var dragMoved: (() -> Void)?
     var dragEnded: (() -> Void)?
 
     private var collapse: Task<Void, Never>?
@@ -151,8 +150,6 @@ final class PanelState: ObservableObject {
         active = nil
         dragBegan?()
     }
-
-    func moveDrag() { dragMoved?() }
 
     func endDrag() {
         guard dragging else { return }

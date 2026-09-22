@@ -8,9 +8,16 @@ final class NotchController {
     private var panel: NotchPanel?
     private var hosting: PassthroughHostingView<NotchRoot>?
 
-    /// Where the window and the pointer were when the current drag started.
-    private var dragOriginY: CGFloat = 0
-    private var dragStartMouseY: CGFloat = 0
+    /// Drives the drag from a timer rather than the SwiftUI gesture: crossing a
+    /// corner rebuilds the rail's layout, which would tear the gesture down
+    /// mid-drag. Polling the pointer survives that.
+    private var dragTimer: Timer?
+    /// Only trust a "button is up" reading once we have actually seen it down;
+    /// otherwise a stale reading on the first tick ends the drag instantly.
+    private var sawButtonDown = false
+    /// Eased position along the current edge, so the notch trails the pointer
+    /// instead of snapping to it frame by frame.
+    private var smoothedAnchor: Double = 0.5
 
     init(store: UsageStore) {
         self.store = store
@@ -67,69 +74,141 @@ final class NotchController {
         self.panel = panel
 
         state.dragBegan = { [weak self] in self?.beginDrag() }
-        state.dragMoved = { [weak self] in self?.moveDrag() }
-        state.dragEnded = { [weak self] in self?.endDrag() }
+        state.dragEnded = { [weak self] in self?.finishDrag() }
 
         reposition()
         panel.orderFrontRegardless()
     }
 
-    func reposition() {
+    func reposition(animated: Bool = false) {
         guard let panel else { return }
-        let screen = targetScreen()
-        let frame = screen.frame
+        let screen = targetScreen().frame
+        let size = windowSize(for: store.config.edge, screen: screen)
+        let origin = originFor(edge: store.config.edge,
+                               anchor: store.config.anchor,
+                               size: size, screen: screen)
+        let target = NSRect(origin: origin, size: size)
 
-        let width = Metrics.expandedWidth + Metrics.windowMargin
-        // Only as tall as the silhouette plus a little slack for the overshoot.
-        // An oversized window would hit the screen edge long before the island does.
-        let height = min(Metrics.islandHeight(gauges: visibleRows,
-                                              shortcuts: store.config.shortcuts.count + 1)
-                            + Metrics.windowMargin,
-                         frame.height)
-
-        let anchor = min(max(store.config.verticalAnchor, 0), 1)
-        let centerY = frame.maxY - CGFloat(anchor) * frame.height
-        let y = min(max(centerY - height / 2, frame.minY), frame.maxY - height)
-
-        panel.setFrame(NSRect(x: frame.minX, y: y, width: width, height: height),
-                       display: true)
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = Motion.snapDuration
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
+                ctx.allowsImplicitAnimation = true
+                panel.animator().setFrame(target, display: true)
+            }
+        } else {
+            panel.setFrame(target, display: true)
+        }
 
         if ProcessInfo.processInfo.environment["SIDENOTCH_DEBUG"] != nil {
-            let f = panel.frame
-            let line = "panel: x=\(f.minX) y=\(f.minY) \(f.width)x\(f.height)"
-                + " screen=\(frame.minX),\(frame.minY) \(frame.width)x\(frame.height)\n"
+            let line = "panel: edge=\(store.config.edge.rawValue)"
+                + " x=\(target.minX) y=\(target.minY) \(target.width)x\(target.height)"
+                + " screen=\(screen.width)x\(screen.height)\n"
             FileHandle.standardError.write(Data(line.utf8))
         }
     }
 
+    /// The window has to hold the island at its widest, whichever way it faces.
+    private func windowSize(for edge: NotchEdge, screen: CGRect) -> CGSize {
+        let island = Metrics.islandSize(edge: edge, gauges: visibleRows,
+                                        shortcuts: store.config.shortcuts.count + 1)
+        return CGSize(
+            width: min(island.width + Metrics.windowMargin, screen.width),
+            height: min(island.height + Metrics.windowMargin, screen.height)
+        )
+    }
+
+    /// `anchor` runs 0…1 along the docked edge: top to bottom, or left to right.
+    private func originFor(edge: NotchEdge, anchor: Double,
+                           size: CGSize, screen: CGRect) -> CGPoint {
+        let a = CGFloat(min(max(anchor, 0), 1))
+        switch edge {
+        case .left, .right:
+            let centreY = screen.maxY - a * screen.height
+            let y = min(max(centreY - size.height / 2, screen.minY),
+                        screen.maxY - size.height)
+            let x = edge == .left ? screen.minX : screen.maxX - size.width
+            return CGPoint(x: x, y: y)
+        case .top:
+            let centreX = screen.minX + a * screen.width
+            let x = min(max(centreX - size.width / 2, screen.minX),
+                        screen.maxX - size.width)
+            return CGPoint(x: x, y: screen.maxY - size.height)
+        }
+    }
+
+    /// Pin the rail to whichever display the cursor is on, and remember it.
     private var visibleRows: Int {
         (store.config.showClaude ? 1 : 0) + (store.config.showCodex ? 1 : 0)
     }
 
     // MARK: Dragging
 
+
+    // MARK: Dragging
+
     private func beginDrag() {
-        dragOriginY = panel?.frame.minY ?? 0
-        dragStartMouseY = NSEvent.mouseLocation.y
+        guard dragTimer == nil else { return }
+        smoothedAnchor = store.config.anchor
+        sawButtonDown = false
+        // A drag puts the run loop in .eventTracking, where a default-mode
+        // timer never fires — it has to be added in .common explicitly.
+        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                // No gesture callback tells us the button went up once the view
+                // has been rebuilt, so read the button state directly.
+                let held = NSEvent.pressedMouseButtons & 1 != 0
+                if held { self.sawButtonDown = true }
+                if self.sawButtonDown && !held {
+                    self.finishDrag()
+                } else {
+                    self.followCursorAlongEdges()
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        dragTimer = timer
     }
 
-    private func moveDrag() {
+    /// The notch never leaves the screen edge: the pointer only chooses which
+    /// edge it is on and how far along, and it eases towards that.
+    private func followCursorAlongEdges() {
         guard let panel else { return }
         let screen = targetScreen().frame
-        let height = panel.frame.height
-        let delta = NSEvent.mouseLocation.y - dragStartMouseY
-        let y = min(max(dragOriginY + delta, screen.minY), screen.maxY - height)
-        panel.setFrameOrigin(NSPoint(x: panel.frame.minX, y: y))
-    }
+        let mouse = NSEvent.mouseLocation
+        let edge = NotchEdge.nearest(to: mouse, in: screen)
 
-    private func endDrag() {
-        guard let panel else { return }
-        let screen = targetScreen().frame
-        let centreY = panel.frame.minY + panel.frame.height / 2
+        let target: Double = edge.isVertical
+            ? Double((screen.maxY - mouse.y) / screen.height)
+            : Double((mouse.x - screen.minX) / screen.width)
+
+        // Exponential ease. Rotating to a new edge is instant — that is the
+        // notch turning the corner — but sliding along one is smoothed.
+        if edge != store.config.edge {
+            var cfg = store.config
+            cfg.edge = edge
+            store.applyLive(cfg)
+            smoothedAnchor = target
+        }
+        smoothedAnchor += (target - smoothedAnchor) * 0.18
+
         var cfg = store.config
-        cfg.verticalAnchor = Double((screen.maxY - centreY) / screen.height)
-        cfg.save()
-        store.reloadConfig()
+        cfg.anchor = smoothedAnchor
+        store.applyLive(cfg)
+
+        let size = windowSize(for: edge, screen: screen)
+        let origin = originFor(edge: edge, anchor: smoothedAnchor, size: size, screen: screen)
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+    }
+
+    func finishDrag() {
+        guard dragTimer != nil else { return }
+        dragTimer?.invalidate()
+        dragTimer = nil
+        state.endDrag()
+        store.config.save()
+        reposition(animated: true)
     }
 
     /// Pin the rail to whichever display the cursor is on, and remember it.

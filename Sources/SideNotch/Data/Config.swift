@@ -18,14 +18,20 @@ struct Config: Codable, Equatable {
     /// Display the rail sits on. nil = the primary screen.
     var displayID: UInt32? = nil
 
-    /// Fraction of the rail height from the top of the screen. 0.5 = centered.
-    var verticalAnchor: Double = 0.5
+    /// Which screen edge the notch is docked to.
+    var edge: NotchEdge = .left
+
+    /// Position along that edge. 0 = start (top or left), 1 = end. 0.5 centres it.
+    var anchor: Double = 0.5
 
     /// Apps dropped onto the rail, in the order they appear.
     var shortcuts: [Shortcut] = []
 
     static let url = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config/sidenotch/config.json")
+
+    /// Kept only so an older config file still decodes.
+    private var verticalAnchor: Double?
 
     init() {}
 
@@ -38,7 +44,11 @@ struct Config: Codable, Equatable {
         showClaude = try c.decodeIfPresent(Bool.self, forKey: .showClaude) ?? d.showClaude
         showCodex = try c.decodeIfPresent(Bool.self, forKey: .showCodex) ?? d.showCodex
         displayID = try c.decodeIfPresent(UInt32.self, forKey: .displayID)
-        verticalAnchor = try c.decodeIfPresent(Double.self, forKey: .verticalAnchor) ?? d.verticalAnchor
+        edge = try c.decodeIfPresent(NotchEdge.self, forKey: .edge) ?? d.edge
+        // `verticalAnchor` is what this was called when left was the only edge.
+        anchor = try c.decodeIfPresent(Double.self, forKey: .anchor)
+            ?? c.decodeIfPresent(Double.self, forKey: .verticalAnchor)
+            ?? d.anchor
         shortcuts = try c.decodeIfPresent([Shortcut].self, forKey: .shortcuts) ?? d.shortcuts
     }
 
