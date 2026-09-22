@@ -214,6 +214,14 @@ height swapped. Text never rotates, so the layout picks a `VStack` or `HStack`
 per edge and the detail block keeps the same size either way — what changes is
 which of its two dimensions points away from the screen.
 
+**Rail thickness is per-axis.** A vertical rail only has the icon crossing it,
+but a horizontal one stacks the icon *and* its caption across the strip. At the
+same thickness the caption ends up pressed against the far edge, so the
+horizontal rail is sized for both with the margin the vertical one gets. For the
+same reason a horizontal rail top-aligns its items: a gauge is an icon with a
+caption, a shortcut is just an icon, and centring each separately would leave the
+shortcuts half a caption lower than the gauges.
+
 **Two ways of opening.** On the side edges the detail is a second shape tucked
 under the rail, so a rail lengthened by shortcuts does not lengthen what pops
 out. On the top edge that does not work: text is wide and two gauges are narrow,

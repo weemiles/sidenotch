@@ -37,6 +37,8 @@ enum Metrics {
     static let railPaddingV: CGFloat = 10
     static let rowHeight: CGFloat = 52
     static let iconDiameter: CGFloat = 30
+    static let captionSpacing: CGFloat = 5
+    static let captionHeight: CGFloat = 10
     static let ringWidth: CGFloat = 2.4
 
     static let detailWidth: CGFloat = 248
@@ -75,8 +77,17 @@ enum Metrics {
         railPaddingV * 2 + CGFloat(max(gauges, 1)) * rowHeight
     }
 
-    /// Size of the rail across the edge it is docked to (its thickness).
-    static var railThickness: CGFloat { railWidth }
+    /// How thick the rail is across the edge it is docked to.
+    ///
+    /// A vertical rail only has the icon crossing it. A horizontal one stacks the
+    /// icon *and* its caption across the strip, so at the same thickness the
+    /// caption ends up pressed against the far edge — it needs room for both,
+    /// with the margin the vertical rail gets.
+    static func railThickness(edge: NotchEdge) -> CGFloat {
+        guard !edge.isVertical else { return railWidth }
+        let margin = (railWidth - iconDiameter) / 2
+        return iconDiameter + captionSpacing + captionHeight + margin * 2
+    }
 
     /// Full silhouette length along the edge, flares included.
     static func islandLength(gauges: Int, shortcuts: Int) -> CGFloat {
@@ -128,11 +139,11 @@ enum Metrics {
     static func topShellSize(gauges: Int, shortcuts: Int, open: Bool) -> CGSize {
         let railLength = contentHeight(gauges: gauges, shortcuts: shortcuts)
         guard open else {
-            return CGSize(width: railLength, height: railThickness)
+            return CGSize(width: railLength, height: railThickness(edge: .top))
         }
         return CGSize(
             width: max(railLength, detailWidth + detailPadding * 2),
-            height: railThickness + gaugeBlockHeight(gauges: gauges) + detailPadding
+            height: railThickness(edge: .top) + gaugeBlockHeight(gauges: gauges) + detailPadding
         )
     }
 
@@ -142,7 +153,8 @@ enum Metrics {
             let shell = topShellSize(gauges: gauges, shortcuts: shortcuts, open: true)
             return CGSize(width: shell.width + flare * 2, height: shell.height)
         }
-        let across = railThickness + detailAcross(edge: edge, gauges: gauges) + detailPadding
+        let across = railThickness(edge: edge) + detailAcross(edge: edge, gauges: gauges)
+            + detailPadding
         let along = max(contentHeight(gauges: gauges, shortcuts: shortcuts),
                         detailAlong(edge: edge, gauges: gauges) + bulgeFillet) + flare * 2
         return CGSize(width: across, height: along)

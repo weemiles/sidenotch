@@ -147,7 +147,8 @@ struct RootView: View {
             if isTop {
                 VStack(alignment: .leading, spacing: 0) {
                     RailColumn(edge: edge, specs: specs, state: state, store: store)
-                        .frame(width: railLength, height: Metrics.railWidth,
+                        .frame(width: railLength,
+                               height: Metrics.railThickness(edge: edge),
                                alignment: .leading)
                     if let spec = displayedSpec {
                         WidgetBody(spec: spec, store: store)
@@ -191,8 +192,9 @@ struct RootView: View {
     }
 
     private var railFrame: CGSize {
-        edge.isVertical ? CGSize(width: Metrics.railWidth, height: railLength)
-                        : CGSize(width: railLength, height: Metrics.railWidth)
+        let thickness = Metrics.railThickness(edge: edge)
+        return edge.isVertical ? CGSize(width: thickness, height: railLength)
+                               : CGSize(width: railLength, height: thickness)
     }
 
     private var railShapeFrame: CGSize {
@@ -240,7 +242,7 @@ struct RootView: View {
         .frame(width: bulgeSize.width, height: bulgeSize.height,
                alignment: bulgeContentAlignment)
         .clipped()
-        .padding(bulgeNearEdge, Metrics.railThickness - Metrics.panelOverlap)
+        .padding(bulgeNearEdge, Metrics.railThickness(edge: edge) - Metrics.panelOverlap)
         .padding(edge.isVertical ? .top : .leading, Metrics.flare)
         .reportHitRect(isOpen)
     }
@@ -279,6 +281,10 @@ struct RootView: View {
 }
 
 /// Lays its children out along whichever axis the rail runs.
+///
+/// A horizontal rail top-aligns: a gauge is an icon with a caption under it
+/// while a shortcut is just an icon, so centring each one separately would leave
+/// the shortcuts sitting lower than the gauges by half a caption.
 struct AxisStack<Content: View>: View {
     let axis: Axis
     var spacing: CGFloat = 0
@@ -288,7 +294,7 @@ struct AxisStack<Content: View>: View {
         if axis == .vertical {
             VStack(spacing: spacing) { content }
         } else {
-            HStack(spacing: spacing) { content }
+            HStack(alignment: .top, spacing: spacing) { content }
         }
     }
 }
@@ -320,6 +326,7 @@ struct RailColumn: View {
                     .fill(Theme.hairline)
                     .frame(width: axis == .vertical ? Metrics.iconDiameter : 1,
                            height: axis == .vertical ? 1 : Metrics.iconDiameter)
+                    .padding(.top, axis == .vertical ? 0 : 0)
                     .padding(axis == .vertical ? .vertical : .horizontal,
                              (Metrics.dividerBlock - 1) / 2)
                     .transition(.opacity)
@@ -440,7 +447,7 @@ struct RailItem: View {
     }
 
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: Metrics.captionSpacing) {
             ZStack {
                 ArcGauge(remaining: spec.remaining, color: tint)
                 SVGShape(data: spec.logo)
@@ -489,7 +496,7 @@ struct RailItem: View {
                 // The caption is digits only, so its line box carries descender
                 // slack the glyphs never use. Tightening the box to the ink is
                 // what keeps the column optically centred in the island.
-                .frame(height: 10)
+                .frame(height: Metrics.captionHeight)
                 .foregroundStyle(spec.available ? Theme.textSecondary : Theme.textTertiary)
                 .allowsHitTesting(false)
         }
