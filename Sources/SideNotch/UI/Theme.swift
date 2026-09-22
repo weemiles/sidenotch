@@ -5,7 +5,8 @@ enum Theme {
     /// type weight and spacing rather than from more colour.
     static let accent = Color(red: 0x56 / 255, green: 0xE8 / 255, blue: 0x93 / 255)
     static let warn   = Color(red: 0xE8 / 255, green: 0x92 / 255, blue: 0x4A / 255)
-    static let danger = Color(red: 0xE8 / 255, green: 0x68 / 255, blue: 0x5A / 255)
+    /// macOS dark-mode system red: nearly gone has to read as red, not salmon.
+    static let danger = Color(red: 0xFF / 255, green: 0x45 / 255, blue: 0x3A / 255)
 
     static let shell          = Color.black
     static let textPrimary    = Color.white.opacity(0.95)

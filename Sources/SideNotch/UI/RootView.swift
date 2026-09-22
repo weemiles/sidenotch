@@ -164,7 +164,7 @@ struct RootView: View {
                         WidgetBody(spec: spec, store: store)
                             .frame(width: Metrics.detailWidth,
                                    height: gaugeBlock,
-                                   alignment: .leading)
+                                   alignment: .topLeading)
                             .padding(.horizontal, Metrics.detailPadding)
                             .opacity(isOpen ? 1 : 0)
                     }
@@ -239,9 +239,12 @@ struct RootView: View {
 
             if let spec = displayedSpec {
                 WidgetBody(spec: spec, store: store)
+                    // Top-aligned so a short panel does not float mid-block;
+                    // the inset keeps its first line off the rounded corner.
+                    .padding(.top, Metrics.detailPadding)
                     .frame(width: Metrics.detailWidth,
                            height: gaugeBlock,
-                           alignment: .leading)
+                           alignment: .topLeading)
                     // Clear the slice that sits under the rail, or the first
                     // characters of every line disappear behind it.
                     .padding(bulgeNearEdge, Metrics.panelOverlap)
