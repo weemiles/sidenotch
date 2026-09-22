@@ -1,0 +1,194 @@
+import SwiftUI
+
+/// Contents revealed inside the island. No background of its own — the island's
+/// single shape already provides it, which is what keeps the expansion reading
+/// as one body growing rather than a second surface appearing.
+struct WidgetBody: View {
+    let spec: WidgetSpec
+    @ObservedObject var store: UsageStore
+
+    @State private var shown = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if spec.id == "claude" {
+                ClaudeBody(usage: store.claude, shown: shown)
+            } else {
+                CodexBody(usage: store.codex, shown: shown)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { shown = true }
+        .onDisappear { shown = false }
+    }
+}
+
+/// Stagger wrapper: index 0 arrives first, each later row `Motion.stagger` behind.
+private struct Row<Content: View>: View {
+    let index: Int
+    let shown: Bool
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .blur(radius: shown ? 0 : 2)
+            .offset(x: shown ? 0 : -10)
+            .animation(
+                shown
+                    ? Motion.rowIn.delay(Double(index) * Motion.stagger + Motion.rowLead)
+                    : Motion.rowOut,
+                value: shown
+            )
+    }
+}
+
+// MARK: - Claude
+
+private struct ClaudeBody: View {
+    let usage: ClaudeUsage
+    let shown: Bool
+
+    var body: some View {
+        Row(index: 0, shown: shown) {
+            Header(title: "Claude Code", trailing: L.estimate)
+        }
+
+        if usage.windowEnd != nil {
+            Row(index: 1, shown: shown) {
+                Meter(remaining: usage.remaining,
+                      color: Theme.tint(remaining: usage.remaining))
+            }
+            Row(index: 2, shown: shown) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(Fmt.percent(usage.remaining))
+                        .font(.system(size: 17, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textPrimary)
+                    Text(L.left)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                    Spacer(minLength: 0)
+                    Text(L.spent(Fmt.usd(usage.costUSD), of: Fmt.usd(usage.budgetUSD)))
+                        .font(.system(size: 10))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            Row(index: 3, shown: shown) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let at = Fmt.resetStamp(usage.windowEnd),
+                       let left = Fmt.remaining(until: usage.windowEnd) {
+                        Text(L.claudeWindow(resetAt: at))
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textSecondary)
+                        Text(L.inTime(left))
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    if let used = usage.lastUsed {
+                        Text(L.lastUsed(Fmt.resetStamp(used) ?? ""))
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
+            }
+        } else {
+            Row(index: 1, shown: shown) {
+                Text(L.noActiveWindow)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+
+    }
+}
+
+// MARK: - Codex
+
+private struct CodexBody: View {
+    let usage: CodexUsage
+    let shown: Bool
+
+    var body: some View {
+        Row(index: 0, shown: shown) {
+            Header(title: "Codex", trailing: usage.planType)
+        }
+
+        if let p = usage.primary {
+            Row(index: 1, shown: shown) {
+                Meter(remaining: p.remaining, color: Theme.tint(remaining: p.remaining))
+            }
+            Row(index: 2, shown: shown) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(Fmt.percent(p.remaining))
+                        .font(.system(size: 17, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textPrimary)
+                    Text(L.left)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                    Spacer(minLength: 0)
+                    Text(L.used(Fmt.percent(p.usedPercent / 100)))
+                        .font(.system(size: 10))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            Row(index: 3, shown: shown) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let at = Fmt.resetStamp(p.resetsAt),
+                       let left = Fmt.remaining(until: p.resetsAt) {
+                        Text(L.codexWindow(p.label, resetAt: at))
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textSecondary)
+                        Text(L.inTime(left))
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                    if let updated = usage.updatedAt {
+                        Text(L.lastUsed(Fmt.resetStamp(updated) ?? ""))
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
+            }
+            if let s = usage.secondary {
+                Row(index: 4, shown: shown) {
+                    Text(L.secondaryLeft(s.label, Fmt.percent(s.remaining)))
+                        .font(.system(size: 10))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+        } else {
+            Row(index: 1, shown: shown) {
+                Text(L.noCodexSession)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+
+    }
+}
+
+// MARK: - Shared
+
+private struct Header: View {
+    let title: String
+    var trailing: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text(title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+            Spacer(minLength: 0)
+            if let trailing {
+                Text(trailing)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+    }
+}
