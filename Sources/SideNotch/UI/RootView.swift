@@ -482,7 +482,13 @@ struct RailItem: View {
                 // the pointer from there, so rebuilding this view at a corner
                 // cannot interrupt it.
                 DragGesture(minimumDistance: 4)
-                    .onChanged { _ in state.beginDrag() }
+                    .onChanged { _ in
+                        // A bare pointer move over the logo can still reach this,
+                        // and acting on it drags the notch off to another edge on
+                        // its own. A drag has to have a button behind it.
+                        guard NSEvent.pressedMouseButtons & 1 != 0 else { return }
+                        state.beginDrag()
+                    }
                     // Belt and braces: the timer normally sees the button go up,
                     // but if this view survives the drag the gesture will say so
                     // first, and finishing twice is a no-op.

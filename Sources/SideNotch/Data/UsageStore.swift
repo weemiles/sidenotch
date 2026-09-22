@@ -20,6 +20,12 @@ final class UsageStore: ObservableObject {
 
     func start() {
         claude.budgetUSD = config.claudeFiveHourBudgetUSD
+        if let demo = DemoValues.current {
+            // Hold the numbers still for a recording: no timers, no disk reads.
+            claude = demo.claude(budget: config.claudeFiveHourBudgetUSD)
+            codex = demo.codex
+            return
+        }
         scheduleTimers()
         pollFast()
         pollSlow()
@@ -28,6 +34,7 @@ final class UsageStore: ObservableObject {
     func reloadConfig() {
         config = Config.load()
         claude.budgetUSD = config.claudeFiveHourBudgetUSD
+        guard DemoValues.current == nil else { return }
         scheduleTimers()
     }
 
@@ -53,6 +60,7 @@ final class UsageStore: ObservableObject {
     }
 
     func refreshNow() {
+        guard DemoValues.current == nil else { return }
         pollFast()
         pollSlow()
     }
@@ -70,16 +78,11 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    /// Cheap: a couple of small JSON files plus the tail of one log.
+    /// Cheap: just the tail of the newest Codex rollout.
     private func pollFast() {
-        queue.async { [weak self] in
-            guard let self else { return }
-            let sessions = self.scanner.liveSessions()
+        queue.async {
             let codexUsage = CodexReader.read()
-            Task { @MainActor in
-                self.claude.sessions = sessions
-                self.codex = codexUsage
-            }
+            Task { @MainActor in self.codex = codexUsage }
         }
     }
 

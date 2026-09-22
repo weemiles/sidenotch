@@ -86,11 +86,6 @@ private struct ClaudeBody: View {
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.textTertiary)
                     }
-                    if let used = usage.lastUsed {
-                        Text(L.lastUsed(Fmt.resetStamp(used) ?? ""))
-                            .font(.system(size: 10))
-                            .foregroundStyle(Theme.textTertiary)
-                    }
                 }
             }
         } else {
@@ -143,11 +138,6 @@ private struct CodexBody: View {
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.textSecondary)
                         Text(L.inTime(left))
-                            .font(.system(size: 10))
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-                    if let updated = usage.updatedAt {
-                        Text(L.lastUsed(Fmt.resetStamp(updated) ?? ""))
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.textTertiary)
                     }

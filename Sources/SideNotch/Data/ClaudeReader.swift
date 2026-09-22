@@ -30,8 +30,6 @@ final class ClaudeLogScanner {
 
     private let projects = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/projects")
-    private let sessionsDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/sessions")
 
     /// How far back events are kept. Needs to exceed the 5h block plus one idle gap
     /// so block boundaries can be found without rescanning history.
@@ -44,35 +42,6 @@ final class ClaudeLogScanner {
 
     init() {
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    }
-
-    // MARK: Live sessions
-
-    func liveSessions() -> [ClaudeSession] {
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: sessionsDir, includingPropertiesForKeys: nil) else { return [] }
-
-        var out: [ClaudeSession] = []
-        for url in files where url.pathExtension == "json" {
-            guard let data = try? Data(contentsOf: url),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let sid = obj["sessionId"] as? String else { continue }
-
-            // Session files outlive the process; drop the ones whose pid is gone.
-            if let pid = obj["pid"] as? Int32, kill(pid, 0) != 0 { continue }
-
-            let updated = (obj["statusUpdatedAt"] as? Double) ?? (obj["updatedAt"] as? Double) ?? 0
-            out.append(ClaudeSession(
-                id: sid,
-                name: (obj["name"] as? String) ?? String(sid.prefix(8)),
-                cwd: (obj["cwd"] as? String) ?? "",
-                status: (obj["status"] as? String) ?? "idle",
-                updatedAt: Date(timeIntervalSince1970: updated / 1000)
-            ))
-        }
-        return out.sorted {
-            $0.isBusy != $1.isBusy ? $0.isBusy : $0.updatedAt > $1.updatedAt
-        }
     }
 
     // MARK: Token window

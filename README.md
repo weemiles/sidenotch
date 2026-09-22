@@ -245,6 +245,15 @@ Add a `WidgetSpec` to `RootView.specs` and a branch in `WidgetBody`. Box height
 comes from `Metrics.contentHeight(gauges:shortcuts:)`; new detail has to fit it
 or it gets clipped.
 
+## Recording and screenshots
+
+```bash
+SIDENOTCH_DEMO=89,24 .build/release/SideNotch
+```
+
+Holds the gauges at those two percentages — Claude first, Codex second — and
+reads nothing from disk, so the numbers do not shift mid-take.
+
 ## Debugging
 
 ```bash

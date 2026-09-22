@@ -2,16 +2,6 @@ import Foundation
 
 // MARK: - Claude
 
-struct ClaudeSession: Identifiable, Equatable {
-    let id: String
-    let name: String
-    let cwd: String
-    let status: String
-    let updatedAt: Date
-
-    var isBusy: Bool { status == "busy" }
-}
-
 struct ClaudeUsage: Equatable {
     /// Start of the current 5-hour block, floored to the hour (ccusage convention).
     var windowStart: Date?
@@ -19,7 +9,6 @@ struct ClaudeUsage: Equatable {
     /// Price-weighted spend in the current window. An estimate, not the real quota.
     var costUSD: Double = 0
     var totalTokens: Int = 0
-    var sessions: [ClaudeSession] = []
     var budgetUSD: Double = 150
 
     var usedFraction: Double {
@@ -31,9 +20,6 @@ struct ClaudeUsage: Equatable {
     var remaining: Double { 1 - usedFraction }
     var remainingUSD: Double { max(0, budgetUSD - costUSD) }
 
-    /// Live sessions are no longer listed, but they are still the most precise
-    /// signal of when Claude Code last did anything on this machine.
-    var lastUsed: Date? { sessions.map(\.updatedAt).max() }
 }
 
 // MARK: - Codex

@@ -37,9 +37,6 @@ enum L {
     static func inTime(_ duration: String) -> String {
         pick("\(duration) 후", "in \(duration)")
     }
-    static func lastUsed(_ stamp: String) -> String {
-        pick("마지막 사용 \(stamp)", "Last used \(stamp)")
-    }
     static func secondaryLeft(_ label: String, _ percent: String) -> String {
         pick("\(label) \(percent) 남음", "\(label) \(percent) left")
     }
