@@ -8,9 +8,12 @@ struct Config: Codable, Equatable {
     /// anything on someone else's machine. Set a number to pin it.
     var claudeFiveHourBudgetUSD: Double?
 
-    /// Last auto-derived value and when, so the scan runs once a day at most.
+    /// Last auto-derived value, when, and what it rests on, so the scan runs
+    /// once a day at most and the panel can say how much to trust it.
     var claudeBudgetAutoUSD: Double?
     var claudeBudgetAutoAt: Date?
+    var claudeBudgetAutoBasis: ClaudeBudgetBasis?
+    var claudeBudgetAutoSamples: Int = 0
 
     /// Seconds between cheap polls (live sessions, Codex tail).
     var fastPollSeconds: Double = 2
@@ -41,6 +44,16 @@ struct Config: Codable, Equatable {
     /// Whatever the gauge should divide by right now.
     var effectiveBudgetUSD: Double { claudeFiveHourBudgetUSD ?? claudeBudgetAutoUSD ?? 100 }
 
+    /// `nil` means nothing has been worked out yet — a fresh install on the
+    /// first run — and the gauge shows no figure rather than a fictional one.
+    var budgetBasis: ClaudeBudgetBasis? {
+        if claudeFiveHourBudgetUSD != nil { return .manual }
+        guard claudeBudgetAutoUSD != nil else { return nil }
+        return claudeBudgetAutoBasis ?? .history
+    }
+
+    var budgetSamples: Int { claudeFiveHourBudgetUSD != nil ? 0 : claudeBudgetAutoSamples }
+
     var needsCalibration: Bool {
         guard claudeFiveHourBudgetUSD == nil else { return false }
         guard let at = claudeBudgetAutoAt, claudeBudgetAutoUSD != nil else { return true }
@@ -55,6 +68,8 @@ struct Config: Codable, Equatable {
         claudeFiveHourBudgetUSD = try c.decodeIfPresent(Double.self, forKey: .claudeFiveHourBudgetUSD)
         claudeBudgetAutoUSD = try c.decodeIfPresent(Double.self, forKey: .claudeBudgetAutoUSD)
         claudeBudgetAutoAt = try c.decodeIfPresent(Date.self, forKey: .claudeBudgetAutoAt)
+        claudeBudgetAutoBasis = try c.decodeIfPresent(ClaudeBudgetBasis.self, forKey: .claudeBudgetAutoBasis)
+        claudeBudgetAutoSamples = try c.decodeIfPresent(Int.self, forKey: .claudeBudgetAutoSamples) ?? 0
         fastPollSeconds = try c.decodeIfPresent(Double.self, forKey: .fastPollSeconds) ?? d.fastPollSeconds
         slowPollSeconds = try c.decodeIfPresent(Double.self, forKey: .slowPollSeconds) ?? d.slowPollSeconds
         showClaude = try c.decodeIfPresent(Bool.self, forKey: .showClaude) ?? d.showClaude

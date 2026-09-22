@@ -55,7 +55,9 @@ struct RootView: View {
     private var specs: [WidgetSpec] {
         var out: [WidgetSpec] = []
         if store.config.showClaude {
-            let live = store.claude.windowEnd != nil
+            // Without a calibrated limit there is nothing honest to divide by,
+            // so the rail shows a dash rather than a made-up percentage.
+            let live = store.claude.windowEnd != nil && store.claude.budgetBasis != nil
             out.append(WidgetSpec(
                 id: "claude",
                 logo: BrandMark.claude,

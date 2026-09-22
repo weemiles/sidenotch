@@ -89,9 +89,22 @@ That denominator is worked out from your own history on first run, because a
 figure baked into the app would mean nothing on anyone else's machine. Windows
 that Claude Code actually refused are the best signal — it records a `five_hour`
 rejection with the reset time, and the spend in the window ending there is about
-where that account runs out — and the median of those becomes the budget. With no
-refusals on record it falls back to the 90th percentile of your own windows. It
-re-derives daily; putting a number in `claudeFiveHourBudgetUSD` pins it instead.
+where that account runs out — and the median of those becomes the budget. The
+panel says so: **measured (5×)** under the gauge means five real cut-offs are
+behind the number.
+
+Until you have been cut off once there is nothing to measure, so it falls back to
+your busiest window so far and labels it **$X+ · never cut off**. That is a lower
+bound, not the limit: nothing was refused in that window, so all it says is that
+your account survives at least this much. It rises as you use more, and the first
+refusal switches the gauge over to the measured figure — immediately, not at the
+next daily pass.
+
+It re-derives daily; putting a number in `claudeFiveHourBudgetUSD` pins it instead.
+
+**Shared and organisation accounts.** If the Claude account is pooled with other
+people, most of what consumes the limit never reaches your logs, and no local
+estimate can work. Codex is unaffected — its number comes from the server.
 
 Weighting uses list-price ratios per model and cache type (Opus/Sonnet/Haiku,
 5m/1h cache writes, cache reads). Only the ratios matter, not the absolute

@@ -2,6 +2,19 @@ import Foundation
 
 // MARK: - Claude
 
+/// Where the denominator behind the Claude gauge came from. The spend is always
+/// an estimate; what varies is whether the limit it is measured against was
+/// observed or guessed, and the panel says which.
+enum ClaudeBudgetBasis: String, Codable, Equatable {
+    /// Windows this account was actually refused in.
+    case refusals
+    /// Its own busiest window — nothing has been refused yet, so this is a
+    /// lower bound on the real limit, not the limit.
+    case history
+    /// Pinned in config by the user.
+    case manual
+}
+
 struct ClaudeUsage: Equatable {
     /// Start of the current 5-hour block, floored to the hour (ccusage convention).
     var windowStart: Date?
@@ -10,6 +23,10 @@ struct ClaudeUsage: Equatable {
     var costUSD: Double = 0
     var totalTokens: Int = 0
     var budgetUSD: Double = 150
+    /// `nil` until the first calibration lands, which is the one state where a
+    /// percentage would be a number made up out of nothing.
+    var budgetBasis: ClaudeBudgetBasis?
+    var budgetSamples: Int = 0
 
     var usedFraction: Double {
         guard budgetUSD > 0 else { return 0 }

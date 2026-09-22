@@ -10,22 +10,6 @@ import Foundation
 /// is remembered by byte offset and only the freshly appended bytes are parsed.
 final class ClaudeLogScanner {
 
-    // Approximate list prices, USD per 1M tokens. Only their *ratios* matter here,
-    // since the result is compared against a user-set budget rather than a real quota.
-    private struct Price {
-        let input: Double, output: Double, write5m: Double, write1h: Double, read: Double
-    }
-    private static let opus   = Price(input: 15, output: 75, write5m: 18.75, write1h: 30, read: 1.50)
-    private static let sonnet = Price(input: 3,  output: 15, write5m: 3.75,  write1h: 6,  read: 0.30)
-    private static let haiku  = Price(input: 1,  output: 5,  write5m: 1.25,  write1h: 2,  read: 0.10)
-
-    private static func price(for model: String?) -> Price {
-        guard let m = model?.lowercased() else { return sonnet }
-        if m.contains("opus") { return opus }
-        if m.contains("haiku") { return haiku }
-        return sonnet
-    }
-
     private struct Event { let at: Date; let cost: Double; let tokens: Int }
 
     private let projects = FileManager.default.homeDirectoryForCurrentUser
@@ -39,9 +23,19 @@ final class ClaudeLogScanner {
     private var cursors: [String: UInt64] = [:]
     private var events: [Event] = []
     private let iso = ISO8601DateFormatter()
+    /// Set when a five-hour refusal turns up in freshly appended bytes.
+    private var refusalSeen = false
 
     init() {
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    }
+
+    /// Reads and clears the refusal flag. A refusal is the account telling you
+    /// exactly where its ceiling is, so it is worth re-deriving the budget on
+    /// the spot rather than waiting for the next daily pass.
+    func takeRefusal() -> Bool {
+        defer { refusalSeen = false }
+        return refusalSeen
     }
 
     // MARK: Token window
@@ -125,30 +119,18 @@ final class ClaudeLogScanner {
         // Cheap pre-filter before paying for JSON parsing.
         guard line.range(of: Data("\"usage\"".utf8)) != nil,
               line.range(of: Data("\"assistant\"".utf8)) != nil else { return }
-        guard let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              obj["type"] as? String == "assistant",
+        // A refusal record is itself an assistant turn, so it clears the filter
+        // above and is picked up below.
+        guard let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { return }
+        if ClaudeCalibrator.isRefusal(obj) { refusalSeen = true }
+
+        guard obj["type"] as? String == "assistant",
               let msg = obj["message"] as? [String: Any],
               let usage = msg["usage"] as? [String: Any],
               let ts = obj["timestamp"] as? String,
               let at = iso.date(from: ts) else { return }
 
-        let p = Self.price(for: msg["model"] as? String)
-        let input = usage["input_tokens"] as? Int ?? 0
-        let output = usage["output_tokens"] as? Int ?? 0
-        let read = usage["cache_read_input_tokens"] as? Int ?? 0
-
-        var write5m = 0, write1h = 0
-        if let detail = usage["cache_creation"] as? [String: Any] {
-            write5m = detail["ephemeral_5m_input_tokens"] as? Int ?? 0
-            write1h = detail["ephemeral_1h_input_tokens"] as? Int ?? 0
-        }
-        if write5m == 0 && write1h == 0 {
-            write5m = usage["cache_creation_input_tokens"] as? Int ?? 0
-        }
-
-        let cost = (Double(input) * p.input + Double(output) * p.output
-                    + Double(write5m) * p.write5m + Double(write1h) * p.write1h
-                    + Double(read) * p.read) / 1_000_000
-        events.append(Event(at: at, cost: cost, tokens: input + output + read + write5m + write1h))
+        let weighed = ClaudePricing.weigh(usage: usage, model: msg["model"] as? String)
+        events.append(Event(at: at, cost: weighed.cost, tokens: weighed.tokens))
     }
 }

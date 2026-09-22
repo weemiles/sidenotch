@@ -21,6 +21,21 @@ enum L {
     static var left: String { pick("남음", "left") }
     static var noActiveWindow: String { pick("활성 5시간 창 없음", "No active 5-hour window") }
     static var noCodexSession: String { pick("최근 Codex 세션 없음", "No recent Codex session") }
+    static var measuringLimit: String { pick("내 한도 측정 중", "Working out your limit") }
+
+    // Where the denominator came from. The spend is always an estimate; this
+    // says whether the limit it is measured against was observed or guessed.
+    static func limitMeasured(_ amount: String, cutOffs: Int) -> String {
+        pick("한도 \(amount) · 실측 (\(cutOffs)회)", "Limit \(amount) · measured (\(cutOffs)×)")
+    }
+    /// A lower bound, and said as one: nothing has been refused, so all that is
+    /// known is that the account survives at least this much.
+    static func limitInferred(_ amount: String) -> String {
+        pick("한도 \(amount) 이상 · 중단 이력 없음", "Limit \(amount)+ · never cut off")
+    }
+    static func limitManual(_ amount: String) -> String {
+        pick("한도 \(amount) · 직접 설정", "Limit \(amount) · set by you")
+    }
 
     static func used(_ amount: String) -> String {
         pick("\(amount) 사용", "\(amount) used")

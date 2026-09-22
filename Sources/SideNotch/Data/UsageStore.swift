@@ -19,44 +19,60 @@ final class UsageStore: ObservableObject {
     private var scanning = false
 
     func start() {
-        claude.budgetUSD = config.effectiveBudgetUSD
+        applyBudget()
         if let demo = DemoValues.current {
             // Hold the numbers still for a recording: no timers, no disk reads.
             claude = demo.claude(budget: config.effectiveBudgetUSD)
+            claude.budgetBasis = .manual
             codex = demo.codex
             return
         }
         scheduleTimers()
         pollFast()
         pollSlow()
-        calibrateIfNeeded()
+        calibrate()
     }
 
     /// Derives the budget from this account's own history, off the main thread.
     /// Without it the gauge divides by a number that meant something only on the
     /// machine it was written on.
-    private func calibrateIfNeeded() {
-        guard config.needsCalibration else { return }
+    ///
+    /// `force` is for the moment a refusal appears: the account has just shown
+    /// where its ceiling is, and waiting a day to notice would leave the gauge
+    /// reading full right after it ran out.
+    private func calibrate(force: Bool = false) {
+        guard force || config.needsCalibration else { return }
         queue.async {
             guard let derived = ClaudeCalibrator.derive() else { return }
             Task { @MainActor in
                 var cfg = self.config
-                cfg.claudeBudgetAutoUSD = derived
+                cfg.claudeBudgetAutoUSD = derived.budgetUSD
+                cfg.claudeBudgetAutoBasis = derived.basis
+                cfg.claudeBudgetAutoSamples = derived.samples
                 cfg.claudeBudgetAutoAt = Date()
                 cfg.save()
                 self.config = cfg
-                self.claude.budgetUSD = cfg.effectiveBudgetUSD
+                self.applyBudget()
                 if ProcessInfo.processInfo.environment["SIDENOTCH_DEBUG"] != nil {
-                    let line = "calibrate: budget $\(Int(derived)) per 5h window\n"
+                    let line = "calibrate: $\(Int(derived.budgetUSD)) per 5h window"
+                        + " from \(derived.samples) \(derived.basis.rawValue)\n"
                     FileHandle.standardError.write(Data(line.utf8))
                 }
             }
         }
     }
 
+    /// Keeps the denominator and the story behind it in step; they are read
+    /// together and a stale pair reads as a confident wrong number.
+    private func applyBudget() {
+        claude.budgetUSD = config.effectiveBudgetUSD
+        claude.budgetBasis = config.budgetBasis
+        claude.budgetSamples = config.budgetSamples
+    }
+
     func reloadConfig() {
         config = Config.load()
-        claude.budgetUSD = config.effectiveBudgetUSD
+        applyBudget()
         guard DemoValues.current == nil else { return }
         scheduleTimers()
     }
@@ -116,13 +132,15 @@ final class UsageStore: ObservableObject {
         queue.async { [weak self] in
             guard let self else { return }
             let window = self.scanner.refreshWindow()
+            let refused = self.scanner.takeRefusal()
             Task { @MainActor in
                 self.claude.windowStart = window?.start
                 self.claude.windowEnd = window?.end
                 self.claude.costUSD = window?.cost ?? 0
                 self.claude.totalTokens = window?.tokens ?? 0
-                self.claude.budgetUSD = self.config.effectiveBudgetUSD
+                self.applyBudget()
                 self.scanning = false
+                if refused { self.calibrate(force: true) }
             }
         }
     }

@@ -54,7 +54,7 @@ private struct ClaudeBody: View {
             Header(title: "Claude Code", trailing: L.estimate)
         }
 
-        if usage.windowEnd != nil {
+        if usage.windowEnd != nil, let basis = usage.budgetBasis {
             Row(index: 1, shown: shown) {
                 Meter(remaining: usage.remaining,
                       color: Theme.tint(remaining: usage.remaining))
@@ -88,14 +88,31 @@ private struct ClaudeBody: View {
                     }
                 }
             }
+            // The gauge is only as good as its denominator, so say where that
+            // came from instead of leaving a bare percentage to be trusted.
+            Row(index: 4, shown: shown) {
+                Text(basisLine(basis))
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.textTertiary)
+            }
         } else {
             Row(index: 1, shown: shown) {
-                Text(L.noActiveWindow)
+                Text(usage.windowEnd == nil ? L.noActiveWindow : L.measuringLimit)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.textTertiary)
             }
         }
 
+    }
+
+    private func basisLine(_ basis: ClaudeBudgetBasis) -> String {
+        let amount = Fmt.usd(usage.budgetUSD)
+        switch basis {
+        case .refusals: return L.limitMeasured(amount, cutOffs: usage.budgetSamples)
+        case .history:  return L.limitInferred(amount)
+        case .manual:   return L.limitManual(amount)
+        }
     }
 }
 
