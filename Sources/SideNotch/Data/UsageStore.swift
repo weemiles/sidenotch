@@ -22,12 +22,18 @@ final class UsageStore: ObservableObject {
     private var scanning = false
     private var fetchingQuota = false
 
-    /// Once a minute is as fresh as `/usage` itself needs to be, and polite to
-    /// an endpoint that is not ours.
-    private let quotaPollSeconds: TimeInterval = 60
-    /// A failed fetch keeps the last reading this long before the gauge drops
-    /// back to the estimate, so one dropped request does not flip the display.
-    private let quotaStaleAfter: TimeInterval = 5 * 60
+    /// Every five minutes is as fresh as a five-hour window needs, and polite to
+    /// an endpoint that is not ours: once a minute per account earns a 429.
+    private let quotaPollSeconds: TimeInterval = 5 * 60
+    /// How old a reading may be and still be shown. Every reading is dated in
+    /// the panel, so an hours-old measurement still beats a guess — but past
+    /// this it says less about now than the estimate does.
+    private let quotaStaleAfter: TimeInterval = 2 * 60 * 60
+    /// Per account, because the endpoint rate-limits per account: one login
+    /// being turned away says nothing about the other. Each refusal waits
+    /// longer than the last.
+    private var quotaBackoff: [String: TimeInterval] = [:]
+    private var nextQuotaAttempt: [String: Date] = [:]
 
     /// Holds one scanner per account. Each keeps byte cursors into that
     /// account's transcripts, so they cannot be shared.
@@ -208,19 +214,42 @@ final class UsageStore: ObservableObject {
         guard !fetchingQuota else { return }
         fetchingQuota = true
         let watched = accounts
+        let now = Date()
+        let due = Set(watched.filter { (nextQuotaAttempt[$0.id] ?? .distantPast) <= now }.map(\.id))
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let read = watched.map { ($0.id, ClaudeQuotaReader.read($0)) }
+            // Spaced apart: two accounts asking in the same instant is itself
+            // enough to trip the limit.
+            var live: [String: ClaudeQuota] = [:]
+            var asked = 0
+            for account in watched where due.contains(account.id) {
+                if asked > 0 { Thread.sleep(forTimeInterval: 3) }
+                asked += 1
+                live[account.id] = ClaudeQuotaReader.read(account)
+            }
+            let cached = watched.map { ($0.id, ClaudeQuotaReader.cached($0)) }
             Task { @MainActor in
                 guard let self else { return }
                 let now = Date()
-                for (id, quota) in read {
+                for (id, fromClaudeCode) in cached {
                     guard let index = self.claude.firstIndex(where: { $0.id == id }) else { continue }
-                    if let quota {
-                        self.claude[index].quota = quota
-                    } else if let last = self.claude[index].quota,
-                              now.timeIntervalSince(last.fetchedAt) > self.quotaStaleAfter {
-                        self.claude[index].quota = nil
+                    if let fresh = live[id] {
+                        self.claude[index].quota = fresh
+                        self.quotaBackoff[id] = nil
+                        self.nextQuotaAttempt[id] = nil
+                        continue
                     }
+                    if due.contains(id) {          // asked, and turned away
+                        let wait = min(max(self.quotaPollSeconds, (self.quotaBackoff[id] ?? 0) * 2), 30 * 60)
+                        self.quotaBackoff[id] = wait
+                        self.nextQuotaAttempt[id] = now.addingTimeInterval(wait)
+                    }
+                    // Both what we last read and what Claude Code last read are
+                    // real measurements. Keep the newer one rather than falling
+                    // back to a guess the moment the endpoint says no.
+                    self.claude[index].quota = [self.claude[index].quota, fromClaudeCode]
+                        .compactMap { $0 }
+                        .filter { $0.isCurrent && now.timeIntervalSince($0.fetchedAt) <= self.quotaStaleAfter }
+                        .max { $0.fetchedAt < $1.fetchedAt }
                 }
                 self.fetchingQuota = false
             }

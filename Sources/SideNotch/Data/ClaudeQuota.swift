@@ -25,6 +25,12 @@ struct ClaudeQuota: Equatable {
     var limits: [ClaudeLimit]
     var fetchedAt: Date
 
+    /// False once any window in the reading has rolled over: the numbers
+    /// described a window that no longer exists.
+    var isCurrent: Bool {
+        limits.compactMap(\.resetsAt).allSatisfy { $0 > Date() }
+    }
+
     /// The weekly allowance across all models: the gauge is there to answer how
     /// much of this week is left. The five-hour window refills within the day and
     /// a model-scoped limit only stops that one model, so both go in the panel.
@@ -51,14 +57,51 @@ enum ClaudeQuotaReader {
 
     private static let endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
 
+    /// What Claude Code itself last read from this same endpoint, kept in its
+    /// state file. Free, and beyond the reach of the rate limit: every session
+    /// on the account refreshes it, so it stands in whenever the endpoint turns
+    /// us away.
+    static func cached(_ account: ClaudeAccount) -> ClaudeQuota? {
+        guard let data = try? Data(contentsOf: ClaudeAccounts.stateFile(for: account.configDir)),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let cache = obj["cachedUsageUtilization"] as? [String: Any],
+              let fetched = (cache["fetchedAtMs"] as? NSNumber)?.doubleValue,
+              let windows = cache["utilization"] as? [String: Any] else { return nil }
+
+        let iso = isoFormatter()
+        let limits = windowKinds.compactMap { window -> ClaudeLimit? in
+            guard let row = windows[window.key] as? [String: Any],
+                  let percent = (row["utilization"] as? NSNumber)?.doubleValue else { return nil }
+            return ClaudeLimit(kind: window.kind, model: window.model, usedPercent: percent,
+                               resetsAt: (row["resets_at"] as? String).flatMap(iso.date(from:)))
+        }
+        guard !limits.isEmpty else { return nil }
+        return ClaudeQuota(limits: limits, fetchedAt: Date(timeIntervalSince1970: fetched / 1000))
+    }
+
+    /// The state file names its windows differently from the endpoint; these are
+    /// the ones that mean the same thing. Anything else there is a limit this
+    /// gauge has no vocabulary for, so it is left out.
+    private static let windowKinds: [(key: String, kind: String, model: String?)] = [
+        ("five_hour", "session", nil),
+        ("seven_day", "weekly_all", nil),
+        ("seven_day_opus", "weekly_scoped", "Opus"),
+        ("seven_day_sonnet", "weekly_scoped", "Sonnet"),
+    ]
+
+    private static func isoFormatter() -> ISO8601DateFormatter {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return iso
+    }
+
     static func read(_ account: ClaudeAccount) -> ClaudeQuota? {
         guard let token = accessToken(for: account),
               let data = get(token: token),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let rows = obj["limits"] as? [[String: Any]] else { return nil }
 
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let iso = isoFormatter()
         let limits = rows.compactMap { row -> ClaudeLimit? in
             guard let kind = row["kind"] as? String,
                   let percent = (row["percent"] as? NSNumber)?.doubleValue else { return nil }

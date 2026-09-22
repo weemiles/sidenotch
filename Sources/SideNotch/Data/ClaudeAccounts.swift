@@ -59,7 +59,7 @@ enum ClaudeAccounts {
 
     /// Claude Code keeps `.claude.json` inside the config directory — except for
     /// the default one, whose copy sits in the home directory instead.
-    private static func stateFile(for configDir: URL) -> URL {
+    static func stateFile(for configDir: URL) -> URL {
         configDir.standardizedFileURL == defaultConfigDir.standardizedFileURL
             ? home.appendingPathComponent(".claude.json")
             : configDir.appendingPathComponent(".claude.json")
