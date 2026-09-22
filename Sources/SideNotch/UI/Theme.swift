@@ -104,13 +104,48 @@ enum Metrics {
         panelOverlap + detailAcross(edge: edge, gauges: gauges) + detailPadding
     }
 
+    /// How long the rail's own shape runs. When the detail is longer than the
+    /// rail — which is always the case on the top edge, where text is wide but
+    /// two gauges are narrow — the rail grows to match so the two shapes end
+    /// together instead of leaving a step at the rail's far end.
+    static func railShapeLength(edge: NotchEdge, gauges: Int, shortcuts: Int,
+                                open: Bool) -> CGFloat {
+        let rail = contentHeight(gauges: gauges, shortcuts: shortcuts)
+        guard open else { return rail }
+        return max(rail, detailAlong(edge: edge, gauges: gauges))
+    }
+
+    /// A concave join is only wanted where the rail genuinely carries on past
+    /// the bulge. Where they finish together it would carve into nothing.
+    static func needsFillet(edge: NotchEdge, gauges: Int, shortcuts: Int) -> Bool {
+        contentHeight(gauges: gauges, shortcuts: shortcuts)
+            > detailAlong(edge: edge, gauges: gauges)
+    }
+
+    /// On the top edge the detail lives *inside* the shape, below the gauge row,
+    /// so the whole black body grows right and down together instead of a second
+    /// piece emerging from under it.
+    static func topShellSize(gauges: Int, shortcuts: Int, open: Bool) -> CGSize {
+        let railLength = contentHeight(gauges: gauges, shortcuts: shortcuts)
+        guard open else {
+            return CGSize(width: railLength, height: railThickness)
+        }
+        return CGSize(
+            width: max(railLength, detailWidth + detailPadding * 2),
+            height: railThickness + gaugeBlockHeight(gauges: gauges) + detailPadding
+        )
+    }
+
     /// Everything at its largest, so the window can be sized once.
     static func islandSize(edge: NotchEdge, gauges: Int, shortcuts: Int) -> CGSize {
+        if edge == .top {
+            let shell = topShellSize(gauges: gauges, shortcuts: shortcuts, open: true)
+            return CGSize(width: shell.width + flare * 2, height: shell.height)
+        }
         let across = railThickness + detailAcross(edge: edge, gauges: gauges) + detailPadding
-        let along = max(islandLength(gauges: gauges, shortcuts: shortcuts),
-                        detailAlong(edge: edge, gauges: gauges) + bulgeFillet + flare)
-        return edge.isVertical ? CGSize(width: across, height: along)
-                               : CGSize(width: along, height: across)
+        let along = max(contentHeight(gauges: gauges, shortcuts: shortcuts),
+                        detailAlong(edge: edge, gauges: gauges) + bulgeFillet) + flare * 2
+        return CGSize(width: across, height: along)
     }
 
     /// Slack around the content so shadows and the expand overshoot are not clipped.

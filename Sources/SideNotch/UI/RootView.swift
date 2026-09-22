@@ -86,9 +86,17 @@ struct RootView: View {
     /// Shortcut rows plus the ghost slot shown while a file hovers over the rail.
     private var slotCount: Int { shortcuts.count + (state.dropTargeting ? 1 : 0) }
 
-    /// The rail only carries on below the bulge when there are shortcuts, and
-    /// that is the only time the join needs a concave curve.
-    private var bulgeFillet: CGFloat { slotCount > 0 ? Metrics.bulgeFillet : 0 }
+    /// A concave join only makes sense where the rail runs on past the bulge.
+    private var bulgeFillet: CGFloat {
+        Metrics.needsFillet(edge: edge, gauges: specs.count, shortcuts: slotCount)
+            ? Metrics.bulgeFillet : 0
+    }
+
+    /// The rail's shape, which grows to meet the bulge when the bulge is longer.
+    private var railShapeLength: CGFloat {
+        Metrics.railShapeLength(edge: edge, gauges: specs.count,
+                                shortcuts: slotCount, open: isOpen)
+    }
 
     var body: some View {
         ZStack(alignment: rootAlignment) {
@@ -118,21 +126,58 @@ struct RootView: View {
     /// *under* the rail. Same colour, overlapping, so they read as one body —
     /// but the bulge only covers the gauge rows, so adding shortcuts lengthens
     /// the rail without lengthening what pops out.
+    private var isTop: Bool { edge == .top }
+
     private var island: some View {
         ZStack(alignment: islandAlignment) {
-            bulge
-            RailColumn(edge: edge, specs: specs, state: state, store: store)
-                .frame(width: railFrame.width, height: railFrame.height,
-                       alignment: railContentAlignment)
-                // The flares are drawn *outside* the content area; without this
-                // margin the notch curves eat into the first and last rows.
-                .padding(edge.isVertical ? .vertical : .horizontal, Metrics.flare)
-                .background(NotchShape(edge: edge).fill(Theme.shell))
-                .clipShape(NotchShape(edge: edge))
+            // On the side edges the detail is a separate shape tucked under the
+            // rail, so shortcuts can lengthen the rail without lengthening it.
+            if !isTop { bulge }
+            shell
         }
         .frame(width: islandSize.width, height: islandSize.height,
                alignment: islandAlignment)
         .animation(Motion.stretch, value: slotCount)
+    }
+
+    /// The black body. On the top edge it holds the detail too and simply grows
+    /// right and down; on the sides it is just the rail.
+    private var shell: some View {
+        Group {
+            if isTop {
+                VStack(alignment: .leading, spacing: 0) {
+                    RailColumn(edge: edge, specs: specs, state: state, store: store)
+                        .frame(width: railLength, height: Metrics.railWidth,
+                               alignment: .leading)
+                    if let spec = displayedSpec {
+                        WidgetBody(spec: spec, store: store)
+                            .frame(width: Metrics.detailWidth,
+                                   height: gaugeBlock,
+                                   alignment: .leading)
+                            .padding(.horizontal, Metrics.detailPadding)
+                            .opacity(isOpen ? 1 : 0)
+                    }
+                }
+            } else {
+                RailColumn(edge: edge, specs: specs, state: state, store: store)
+                    .frame(width: railFrame.width, height: railFrame.height,
+                           alignment: railContentAlignment)
+            }
+        }
+        .frame(width: shellSize.width, height: shellSize.height, alignment: .topLeading)
+        .clipped()
+        // The flares are drawn *outside* the content area; without this margin
+        // the notch curves eat into the first and last rows.
+        .padding(edge.isVertical ? .vertical : .horizontal, Metrics.flare)
+        .background(NotchShape(edge: edge).fill(Theme.shell))
+        .clipShape(NotchShape(edge: edge))
+        .reportHitRect(isTop && isOpen)
+    }
+
+    private var shellSize: CGSize {
+        isTop
+            ? Metrics.topShellSize(gauges: specs.count, shortcuts: slotCount, open: isOpen)
+            : railFrame
     }
 
     // MARK: Geometry
@@ -148,6 +193,11 @@ struct RootView: View {
     private var railFrame: CGSize {
         edge.isVertical ? CGSize(width: Metrics.railWidth, height: railLength)
                         : CGSize(width: railLength, height: Metrics.railWidth)
+    }
+
+    private var railShapeFrame: CGSize {
+        edge.isVertical ? CGSize(width: Metrics.railWidth, height: railShapeLength)
+                        : CGSize(width: railShapeLength, height: Metrics.railWidth)
     }
 
     private var islandSize: CGSize {

@@ -214,6 +214,13 @@ height swapped. Text never rotates, so the layout picks a `VStack` or `HStack`
 per edge and the detail block keeps the same size either way — what changes is
 which of its two dimensions points away from the screen.
 
+**Two ways of opening.** On the side edges the detail is a second shape tucked
+under the rail, so a rail lengthened by shortcuts does not lengthen what pops
+out. On the top edge that does not work: text is wide and two gauges are narrow,
+so the detail always overhangs the rail and leaves a step at its far end. There
+the detail lives inside the rail's own shape instead, and the whole black body
+grows right and down together.
+
 **Joining the two shapes.** The rail's top-right corner curve and the bulge's
 top-left curve bend opposite ways and leave a dent. The bulge's left corners are
 square and the overlap reaches past the rail's corner radius, so its flat top
