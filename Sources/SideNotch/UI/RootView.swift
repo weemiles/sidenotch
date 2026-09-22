@@ -58,16 +58,19 @@ struct RootView: View {
         var out: [WidgetSpec] = []
         if store.config.showClaude {
             for account in store.claude {
-                // Without a calibrated limit there is nothing honest to divide
-                // by, so the rail shows a dash rather than a made-up percentage.
-                let live = account.windowEnd != nil && account.budgetBasis != nil
+                // The account's own figure wins. Failing that, without a
+                // calibrated limit there is nothing honest to divide by, so the
+                // rail shows a dash rather than a made-up percentage.
+                let estimated = account.windowEnd != nil && account.budgetBasis != nil
+                let left = account.quota?.headline?.remaining
+                    ?? (estimated ? account.remaining : nil)
                 out.append(WidgetSpec(
                     id: "claude:\(account.id)",
                     logo: BrandMark.claude,
                     markColor: Theme.claudeMark,
-                    remaining: live ? account.remaining : 1,
-                    caption: live ? Fmt.percent(account.remaining) : "–",
-                    available: live,
+                    remaining: left ?? 1,
+                    caption: left.map(Fmt.percent) ?? "–",
+                    available: left != nil,
                     badge: account.label
                 ))
             }

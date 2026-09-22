@@ -74,7 +74,17 @@ stop you — and the panel lists the rest. Codex reports several (five-hour,
 weekly, monthly) and which one lands in `primary` is not stable, so reading only
 `primary` can show a barely-touched five-hour window while the weekly quota is
 nearly gone.
-| Claude 5-hour window | `~/.claude/projects/**/*.jsonl` → `message.usage` | **estimate** |
+| Claude session, weekly and per-model limits | `api.anthropic.com/api/oauth/usage`, with the login Claude Code keeps in the keychain | **exact** — the same figures `/usage` shows |
+| Claude 5-hour window (fallback) | `~/.claude/projects/**/*.jsonl` → `message.usage` | **estimate** |
+
+The Claude gauge asks Anthropic for the account's own limits once a minute —
+the numbers `/usage` prints — and shows whichever of the session and weekly
+limits has the least left; a model-scoped limit such as Fable's appears in the
+panel instead, since it only stops that one model. The token is read from the
+keychain entry Claude Code already keeps (through `/usr/bin/security`, so no
+prompt) and is never stored, logged or refreshed. When it has expired, or the
+request fails for five minutes, the gauge falls back to the estimate below and
+the panel says `estimate` again.
 
 Claude Code does not record how much of your quota is gone. The limit is worked
 out server-side, per organisation, and nothing in the local logs reproduces it —

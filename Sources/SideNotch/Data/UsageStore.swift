@@ -18,7 +18,16 @@ final class UsageStore: ObservableObject {
     private let queue = DispatchQueue(label: "sidenotch.scan", qos: .utility)
     private var fastTimer: Timer?
     private var slowTimer: Timer?
+    private var quotaTimer: Timer?
     private var scanning = false
+    private var fetchingQuota = false
+
+    /// Once a minute is as fresh as `/usage` itself needs to be, and polite to
+    /// an endpoint that is not ours.
+    private let quotaPollSeconds: TimeInterval = 60
+    /// A failed fetch keeps the last reading this long before the gauge drops
+    /// back to the estimate, so one dropped request does not flip the display.
+    private let quotaStaleAfter: TimeInterval = 5 * 60
 
     /// Holds one scanner per account. Each keeps byte cursors into that
     /// account's transcripts, so they cannot be shared.
@@ -56,6 +65,7 @@ final class UsageStore: ObservableObject {
         scheduleTimers()
         pollFast()
         pollSlow()
+        pollQuota()
         calibrate(forced: Set(accounts.map(\.id)))
     }
 
@@ -169,6 +179,7 @@ final class UsageStore: ObservableObject {
         refreshAccounts()
         pollFast()
         pollSlow()
+        pollQuota()
     }
 
     // MARK: Polling
@@ -183,6 +194,36 @@ final class UsageStore: ObservableObject {
         slowTimer = Timer.scheduledTimer(withTimeInterval: max(5, config.slowPollSeconds),
                                          repeats: true) { [weak self] _ in
             Task { @MainActor in self?.pollSlow() }
+        }
+        quotaTimer?.invalidate()
+        quotaTimer = Timer.scheduledTimer(withTimeInterval: quotaPollSeconds,
+                                          repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.pollQuota() }
+        }
+    }
+
+    /// The real limits, straight from the account. Runs on its own queue: a slow
+    /// network must not hold up the transcript scan behind it.
+    private func pollQuota() {
+        guard !fetchingQuota else { return }
+        fetchingQuota = true
+        let watched = accounts
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let read = watched.map { ($0.id, ClaudeQuotaReader.read($0)) }
+            Task { @MainActor in
+                guard let self else { return }
+                let now = Date()
+                for (id, quota) in read {
+                    guard let index = self.claude.firstIndex(where: { $0.id == id }) else { continue }
+                    if let quota {
+                        self.claude[index].quota = quota
+                    } else if let last = self.claude[index].quota,
+                              now.timeIntervalSince(last.fetchedAt) > self.quotaStaleAfter {
+                        self.claude[index].quota = nil
+                    }
+                }
+                self.fetchingQuota = false
+            }
         }
     }
 

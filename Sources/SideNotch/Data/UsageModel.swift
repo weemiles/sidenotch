@@ -35,6 +35,10 @@ struct ClaudeUsage: Equatable, Identifiable {
     var budgetBasis: ClaudeBudgetBasis?
     var budgetSamples: Int = 0
 
+    /// The account's own figures, when they could be fetched. Everything above
+    /// is the fallback for when they cannot.
+    var quota: ClaudeQuota?
+
     var usedFraction: Double {
         guard budgetUSD > 0 else { return 0 }
         return min(1, costUSD / budgetUSD)

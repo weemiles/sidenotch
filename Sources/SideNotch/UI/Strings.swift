@@ -46,7 +46,7 @@ enum L {
     static func claudeWindow(resetAt stamp: String) -> String {
         pick("5시간 창 · 초기화 \(stamp)", "5-hour window · resets \(stamp)")
     }
-    static func codexWindow(_ label: String, resetAt stamp: String) -> String {
+    static func limitWindow(_ label: String, resetAt stamp: String) -> String {
         pick("\(label) 한도 · 초기화 \(stamp)", "\(label) limit · resets \(stamp)")
     }
     static func inTime(_ duration: String) -> String {

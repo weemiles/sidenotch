@@ -52,7 +52,7 @@ private struct ClaudeBody: View {
     var body: some View {
         Row(index: 0, shown: shown) {
             Header(title: usage.label.isEmpty ? "Claude Code" : "Claude Code \(usage.label)",
-                   trailing: L.estimate)
+                   trailing: usage.quota.map { Fmt.ago($0.fetchedAt) } ?? L.estimate)
         }
         // A number on the rail only helps if something says which login it is.
         if let email = usage.email, !usage.label.isEmpty {
@@ -65,7 +65,48 @@ private struct ClaudeBody: View {
             }
         }
 
-        if usage.windowEnd != nil, let basis = usage.budgetBasis {
+        if let quota = usage.quota, let p = quota.headline {
+            Row(index: 1, shown: shown) {
+                Meter(remaining: p.remaining, color: Theme.tint(remaining: p.remaining))
+            }
+            Row(index: 2, shown: shown) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(Fmt.percent(p.remaining))
+                        .font(.system(size: 17, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textPrimary)
+                    Text(L.left)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                    Spacer(minLength: 0)
+                    Text(L.used(Fmt.percent(p.usedPercent / 100)))
+                        .font(.system(size: 10))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            Row(index: 3, shown: shown) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let at = Fmt.resetStamp(p.resetsAt),
+                       let left = Fmt.remaining(until: p.resetsAt) {
+                        Text(L.limitWindow(p.label, resetAt: at))
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textSecondary)
+                        Text(L.inTime(left))
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
+            }
+            ForEach(Array(quota.others.enumerated()), id: \.element.label) { i, w in
+                Row(index: 4 + i, shown: shown) {
+                    Text(L.secondaryLeft(w.label, Fmt.percent(w.remaining)))
+                        .font(.system(size: 10))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+        } else if usage.windowEnd != nil, let basis = usage.budgetBasis {
             Row(index: 1, shown: shown) {
                 Meter(remaining: usage.remaining,
                       color: Theme.tint(remaining: usage.remaining))
@@ -162,7 +203,7 @@ private struct CodexBody: View {
                 VStack(alignment: .leading, spacing: 2) {
                     if let at = Fmt.resetStamp(p.resetsAt),
                        let left = Fmt.remaining(until: p.resetsAt) {
-                        Text(L.codexWindow(p.label, resetAt: at))
+                        Text(L.limitWindow(p.label, resetAt: at))
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.textSecondary)
                         Text(L.inTime(left))

@@ -115,7 +115,15 @@ cd sidenotch
 | Codex 사용률·리셋 시각 | `~/.codex/sessions/**/rollout-*.jsonl` 의 `rate_limits` | **정확** (서버가 매 턴 내려주는 값) |
 
 | Claude 실행 중 세션 | `~/.claude/sessions/*.json` | **정확** (pid 생존 확인까지 함) |
-| Claude 5시간 창 사용량 | `~/.claude/projects/**/*.jsonl` 의 `message.usage` | **추정** |
+| Claude 세션·주간·모델별 한도 | `api.anthropic.com/api/oauth/usage` (Claude Code가 키체인에 둔 로그인 사용) | **정확** (`/usage`와 같은 값) |
+| Claude 5시간 창 사용량 (대체) | `~/.claude/projects/**/*.jsonl` 의 `message.usage` | **추정** |
+
+Claude 링은 1분마다 계정의 실제 한도를 Anthropic에 물어본다 — `/usage`가 보여주는
+바로 그 값이다. 세션·주간 한도 중 더 적게 남은 쪽을 링에 표시하고, Fable처럼 특정
+모델에만 걸리는 한도는 그 모델만 막으므로 패널에 따로 표시한다. 토큰은 Claude Code가
+이미 만들어 둔 키체인 항목에서 `/usr/bin/security`로 읽기만 하며(권한 창 없음),
+저장·기록·갱신하지 않는다. 토큰이 만료됐거나 5분간 요청이 실패하면 아래의 추정
+방식으로 돌아가고 패널에 다시 `추정`이 표시된다.
 
 Claude Code는 실제 한도 소진율을 로컬에 남기지 않는다. 서버·조직 단위로 계산되기
 때문에 로그만으로는 재현할 수 없다 — 토큰을 훨씬 많이 쓴 창이 멀쩡히 지나가고
