@@ -34,19 +34,30 @@ enum CodexReader {
         var planType: String?
         var latest: Date?
 
-        for url in recentRollouts() {
-            for record in records(in: url) {
-                for window in record.windows {
-                    let known = newest[window.windowMinutes]
-                    if known == nil || (window.updatedAt ?? .distantPast)
-                        > (known?.updatedAt ?? .distantPast) {
-                        newest[window.windowMinutes] = window
-                    }
+        // Codex is not the only allowance the server reports down this channel.
+        // A record can describe an unrelated pool — `base_model_inference`, the
+        // one the account calls "gpt-reserve" — on the very same weekly window,
+        // and taking whichever arrived last put that pool's number under the
+        // Codex heading: a spent reserve read as a spent Codex week. Only the
+        // Codex limit counts here. A record from an older CLI names no limit at
+        // all, and those are taken at face value, but only when nothing in the
+        // logs identifies itself as Codex.
+        let all = recentRollouts().flatMap { records(in: $0) }
+        let own = all.filter { $0.limitId == "codex" }
+        let unnamed = all.filter { $0.limitId == nil }
+        let mine = own.isEmpty ? unnamed : own
+
+        for record in mine {
+            for window in record.windows {
+                let known = newest[window.windowMinutes]
+                if known == nil || (window.updatedAt ?? .distantPast)
+                    > (known?.updatedAt ?? .distantPast) {
+                    newest[window.windowMinutes] = window
                 }
-                if let stamp = record.stamp, stamp > (latest ?? .distantPast) {
-                    latest = stamp
-                    planType = record.planType
-                }
+            }
+            if let stamp = record.stamp, stamp > (latest ?? .distantPast) {
+                latest = stamp
+                planType = record.planType
             }
         }
 
@@ -71,6 +82,9 @@ enum CodexReader {
         var windows: [CodexWindow]
         var planType: String?
         var stamp: Date?
+        /// Which allowance the record is about: "codex", or another pool
+        /// entirely. Absent on records written by an older CLI.
+        var limitId: String?
     }
 
     /// Walks a file's tail backwards. Records are written every turn, so the last
@@ -100,7 +114,8 @@ enum CodexReader {
 
             out.append(Record(windows: windows,
                               planType: limits["plan_type"] as? String,
-                              stamp: stamp))
+                              stamp: stamp,
+                              limitId: limits["limit_id"] as? String))
             windows.forEach { seenWindows.insert($0.windowMinutes) }
             // Nothing new is coming once every window has been seen a few times.
             if seenWindows.count >= 3 && out.count >= 4 { break }
