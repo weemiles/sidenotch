@@ -23,6 +23,45 @@ enum L {
     static var noCodexSession: String { pick("최근 Codex 세션 없음", "No recent Codex session") }
     static var measuringLimit: String { pick("내 한도 측정 중", "Working out your limit") }
 
+    // Memory
+    static var memory: String { pick("메모리", "Memory") }
+    static var usedShort: String { pick("사용", "used") }
+    static func pressure(_ p: MemoryPressure) -> String {
+        switch p {
+        case .normal:   return pick("메모리 압력 · 여유", "Memory pressure · normal")
+        case .warning:  return pick("메모리 압력 · 주의", "Memory pressure · elevated")
+        case .critical: return pick("메모리 압력 · 부족", "Memory pressure · critical")
+        }
+    }
+    static func memoryBreakdown(app: String, wired: String, compressed: String) -> String {
+        pick("앱 \(app) · 고정 \(wired) · 압축 \(compressed)",
+             "App \(app) · wired \(wired) · compressed \(compressed)")
+    }
+    static func swap(_ amount: String) -> String {
+        pick("스왑 \(amount)", "swap \(amount)")
+    }
+    static var confirmQuit: String { pick("종료", "Quit") }
+    static var optimize: String { pick("최적화", "Free up") }
+    static func optimizeConfirm(_ count: Int, _ amount: String) -> String {
+        pick("\(count)개 종료 · \(amount) 확보", "Quit \(count) · free \(amount)")
+    }
+    static var nothingToFree: String { pick("정리할 앱 없음", "Nothing idle") }
+    static func quitCount(_ count: Int) -> String {
+        pick("\(count)개 앱 종료 요청함", "Asked \(count) apps to quit")
+    }
+    static var noWindows: String { pick("창 없음", "no windows") }
+    static func idleFor(_ minutes: Int) -> String {
+        minutes >= 60 ? pick("\(minutes / 60)시간 미사용", "idle \(minutes / 60)h")
+                      : pick("\(minutes)분 미사용", "idle \(minutes)m")
+    }
+    static var optimizeHelp: String {
+        pick("창이 없거나 30분 넘게 안 쓴 앱을 종료합니다. 한 번 더 눌러 확인",
+             "Quits apps with no windows or unused for 30+ minutes. Click again to confirm")
+    }
+    static func quitApp(_ name: String) -> String {
+        pick("\(name) 종료 — 한 번 더 눌러 확인", "Quit \(name) — click again to confirm")
+    }
+
     // Where the denominator came from. The spend is always an estimate; this
     // says whether the limit it is measured against was observed or guessed.
     static func limitMeasured(_ amount: String, cutOffs: Int) -> String {

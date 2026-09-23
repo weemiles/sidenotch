@@ -10,9 +10,13 @@ final class UsageStore: ObservableObject {
     /// One entry per Claude account found on the machine.
     @Published private(set) var claude: [ClaudeUsage] = []
     @Published private(set) var codex = CodexUsage()
+    @Published private(set) var memory = MemoryUsage()
     @Published private(set) var config = Config.load()
 
     private var accounts: [ClaudeAccount] = []
+    /// Codex as the account reports it. Preferred over the logs, which only
+    /// learn anything new when a Codex turn runs.
+    private var codexLive: CodexUsage?
     /// Only ever touched from `queue`; never from the main actor.
     nonisolated(unsafe) private let hub = ScanHub()
     private let queue = DispatchQueue(label: "sidenotch.scan", qos: .utility)
@@ -54,6 +58,7 @@ final class UsageStore: ObservableObject {
 
     func start() {
         refreshAccounts()
+        memory = MemoryReader.read()
         if let demo = DemoValues.current {
             // Hold the numbers still for a recording: no timers, no disk reads.
             claude = claude.enumerated().map { index, usage in
@@ -213,6 +218,14 @@ final class UsageStore: ObservableObject {
     private func pollQuota() {
         guard !fetchingQuota else { return }
         fetchingQuota = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let live = CodexQuotaReader.read() else { return }
+            Task { @MainActor in
+                guard let self else { return }
+                self.codexLive = live
+                self.codex = live
+            }
+        }
         let watched = accounts
         let now = Date()
         let due = Set(watched.filter { (nextQuotaAttempt[$0.id] ?? .distantPast) <= now }.map(\.id))
@@ -256,12 +269,33 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    /// Cheap: just the tail of the newest Codex rollout.
+    /// Quitting takes a moment; read again once the apps have had time to go,
+    /// rather than leaving the old list up for a whole poll.
+    func refreshMemory() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.pollFast()
+        }
+    }
+
+    /// Cheap: just the tail of the newest Codex rollout, and the VM counters.
     private func pollFast() {
         queue.async {
             let codexUsage = CodexReader.read()
-            Task { @MainActor in self.codex = codexUsage }
+            let memoryUsage = MemoryReader.read()
+            Task { @MainActor in
+                self.codex = self.liveCodex ?? codexUsage
+                self.memory = memoryUsage
+            }
         }
+    }
+
+    /// The account's own reading while it still describes the current windows
+    /// and is recent enough to trust; the logs otherwise.
+    private var liveCodex: CodexUsage? {
+        guard let live = codexLive, let at = live.updatedAt,
+              Date().timeIntervalSince(at) <= quotaStaleAfter,
+              live.windows.compactMap(\.resetsAt).allSatisfy({ $0 > Date() }) else { return nil }
+        return live
     }
 
     private struct Scan {

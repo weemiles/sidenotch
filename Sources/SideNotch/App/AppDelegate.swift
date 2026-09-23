@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         controller.show()
         store.start()
+        MemoryOptimizer.shared.start()
         installStatusItem()
 
         NotificationCenter.default.addObserver(

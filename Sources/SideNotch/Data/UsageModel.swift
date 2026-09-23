@@ -100,6 +100,11 @@ enum Fmt {
         "\(Int((f * 100).rounded()))%"
     }
 
+    /// Binary gigabytes, the way Activity Monitor counts them.
+    static func gigabytes(_ bytes: UInt64) -> String {
+        String(format: "%.1f GB", Double(bytes) / 1_073_741_824)
+    }
+
     static func usd(_ v: Double) -> String {
         v >= 100 ? String(format: "$%.0f", v) : String(format: "$%.1f", v)
     }

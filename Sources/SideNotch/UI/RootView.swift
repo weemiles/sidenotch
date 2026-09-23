@@ -10,6 +10,10 @@ struct WidgetSpec: Identifiable {
     let available: Bool
     /// "1", "2" … when a second account makes the logo ambiguous. Empty otherwise.
     var badge: String = ""
+    /// SF Symbol drawn instead of `logo`, for things with no brand mark.
+    var symbol: String? = nil
+    /// Overrides the battery tint when the fill is not an allowance.
+    var ringColor: Color? = nil
 }
 
 /// Reports interactive regions up to the hosting view so everything else stays
@@ -56,6 +60,21 @@ struct RootView: View {
 
     private var specs: [WidgetSpec] {
         var out: [WidgetSpec] = []
+        if store.config.showMemory {
+            let m = store.memory
+            // The one gauge that fills as it is used: RAM has no allowance to
+            // run down, and "62%" reads as how full it is.
+            out.append(WidgetSpec(
+                id: "memory",
+                logo: "",
+                markColor: Theme.memoryMark,
+                remaining: m.usedFraction,
+                caption: m.available ? Fmt.percent(m.usedFraction) : "–",
+                available: m.available,
+                symbol: "memorychip",
+                ringColor: Theme.tint(memory: m)
+            ))
+        }
         if store.config.showClaude {
             for account in store.claude {
                 // The account's own figure wins. Failing that, without a
@@ -167,6 +186,7 @@ struct RootView: View {
                                    alignment: .topLeading)
                             .padding(.horizontal, Metrics.detailPadding)
                             .opacity(isOpen ? 1 : 0)
+                            .onHover(perform: holdOpen)
                     }
                 }
             } else {
@@ -258,6 +278,18 @@ struct RootView: View {
         .padding(bulgeNearEdge, Metrics.railThickness(edge: edge) - Metrics.panelOverlap)
         .padding(edge.isVertical ? .top : .leading, Metrics.flare)
         .reportHitRect(isOpen)
+        .onHover(perform: holdOpen)
+    }
+
+    /// The detail has buttons in it now, so reaching it must not close it: the
+    /// logo's hover-out would otherwise collapse the panel on the way over.
+    private func holdOpen(_ inside: Bool) {
+        guard let id = state.displayed else { return }
+        if inside {
+            if isOpen { state.enter(id) }
+        } else {
+            state.leave(id)
+        }
     }
 
     /// Depth away from the edge, span along it.
@@ -327,8 +359,7 @@ struct RailColumn: View {
                 RailItem(
                     spec: spec,
                     state: state,
-                    isActive: state.active == spec.id,
-                    isPinned: state.pinned == spec.id
+                    isActive: state.active == spec.id
                 )
                 .frame(width: axis == .horizontal ? Metrics.rowHeight : nil,
                        height: axis == .vertical ? Metrics.rowHeight : nil)
@@ -453,31 +484,29 @@ struct RailItem: View {
     let spec: WidgetSpec
     @ObservedObject var state: PanelState
     let isActive: Bool
-    let isPinned: Bool
 
     private var tint: Color {
-        spec.available ? Theme.tint(remaining: spec.remaining) : Theme.textTertiary
+        guard spec.available else { return Theme.textTertiary }
+        return spec.ringColor ?? Theme.tint(remaining: spec.remaining)
     }
 
     var body: some View {
         VStack(spacing: Metrics.captionSpacing) {
             ZStack {
                 ArcGauge(remaining: spec.remaining, color: tint)
-                SVGShape(data: spec.logo)
-                    .fill(spec.available ? spec.markColor : Theme.textTertiary)
-                    .frame(width: Metrics.iconDiameter * 0.46,
-                           height: Metrics.iconDiameter * 0.46)
+                if let symbol = spec.symbol {
+                    Image(systemName: symbol)
+                        .font(.system(size: Metrics.iconDiameter * 0.40, weight: .medium))
+                        .foregroundStyle(spec.available ? spec.markColor : Theme.textTertiary)
+                } else {
+                    SVGShape(data: spec.logo)
+                        .fill(spec.available ? spec.markColor : Theme.textTertiary)
+                        .frame(width: Metrics.iconDiameter * 0.46,
+                               height: Metrics.iconDiameter * 0.46)
+                }
             }
             .frame(width: Metrics.iconDiameter, height: Metrics.iconDiameter)
             .scaleEffect(isActive ? 1.08 : 1)
-            .overlay(alignment: .bottom) {
-                if isPinned {
-                    Capsule()
-                        .fill(Theme.accent)
-                        .frame(width: 10, height: 2)
-                        .offset(y: 3)
-                }
-            }
             // Only the logo is the trigger — the shell around it stays inert.
             .contentShape(Circle())
             .reportHitRect()

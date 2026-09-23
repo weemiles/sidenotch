@@ -19,6 +19,19 @@ enum Theme {
     /// 34pt. The status colour lives in the ring around them, not in the mark.
     static let claudeMark = Color(red: 0xD9 / 255, green: 0x77 / 255, blue: 0x57 / 255)
     static let openaiMark = Color.white.opacity(0.92)
+    static let memoryMark = Color.white.opacity(0.92)
+
+    /// RAM reads the other way round from an allowance: the fuller it is, the
+    /// redder. Memory pressure can still raise it — a machine that is already
+    /// struggling at 60% should not look calm.
+    static func tint(memory: MemoryUsage) -> Color {
+        let byUse = tint(remaining: 1 - memory.usedFraction)
+        switch memory.pressure {
+        case .critical: return danger
+        case .warning:  return byUse == accent ? warn : byUse
+        case .normal:   return byUse
+        }
+    }
 
     /// Reads like a battery: plenty left is green, nearly gone is red.
     /// `remaining` is the fraction still available, not the fraction used.

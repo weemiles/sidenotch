@@ -25,6 +25,7 @@ struct Config: Codable, Equatable {
 
     var showClaude: Bool = true
     var showCodex: Bool = true
+    var showMemory: Bool = true
 
     /// Display the rail sits on. nil = the primary screen.
     var displayID: UInt32? = nil
@@ -76,7 +77,7 @@ struct Config: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case claudeFiveHourBudgetUSD, claudeConfigDirs, claudeBudgetAuto
-        case fastPollSeconds, slowPollSeconds, showClaude, showCodex
+        case fastPollSeconds, slowPollSeconds, showClaude, showCodex, showMemory
         case displayID, edge, anchor, shortcuts, verticalAnchor
     }
 
@@ -109,6 +110,7 @@ struct Config: Codable, Equatable {
         slowPollSeconds = try c.decodeIfPresent(Double.self, forKey: .slowPollSeconds) ?? d.slowPollSeconds
         showClaude = try c.decodeIfPresent(Bool.self, forKey: .showClaude) ?? d.showClaude
         showCodex = try c.decodeIfPresent(Bool.self, forKey: .showCodex) ?? d.showCodex
+        showMemory = try c.decodeIfPresent(Bool.self, forKey: .showMemory) ?? d.showMemory
         displayID = try c.decodeIfPresent(UInt32.self, forKey: .displayID)
         edge = try c.decodeIfPresent(NotchEdge.self, forKey: .edge) ?? d.edge
         // `verticalAnchor` is what this was called when left was the only edge.

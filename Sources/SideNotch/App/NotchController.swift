@@ -140,6 +140,7 @@ final class NotchController {
     /// Pin the rail to whichever display the cursor is on, and remember it.
     private var visibleRows: Int {
         (store.config.showClaude ? 1 : 0) + (store.config.showCodex ? 1 : 0)
+            + (store.config.showMemory ? 1 : 0)
     }
 
     // MARK: Dragging
