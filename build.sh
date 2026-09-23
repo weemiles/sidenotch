@@ -25,6 +25,7 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppleEventsUsageDescription</key><string>이미 열려 있는 Safari 탭을 앞으로 가져오기 위해 필요합니다.</string>
 </dict>
 </plist>
 PLIST
