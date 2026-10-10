@@ -10,6 +10,9 @@ final class UsageStore: ObservableObject {
     /// One entry per Claude account found on the machine.
     @Published private(set) var claude: [ClaudeUsage] = []
     @Published private(set) var codex = CodexUsage()
+    /// `nil` until Grok Bot's own figure has been read — there is no log to fall back on.
+    @Published private(set) var grok: GrokUsage?
+    @Published private(set) var cursor: CursorUsage?
     @Published private(set) var memory = MemoryUsage()
     @Published private(set) var config = Config.load()
 
@@ -179,6 +182,21 @@ final class UsageStore: ObservableObject {
         config = cfg
     }
 
+    /// Moves a shortcut to `index` in memory only; `saveConfig()` persists the
+    /// order once the drag that is reordering it ends.
+    func moveShortcutLive(_ shortcut: Shortcut, to index: Int) {
+        var cfg = config
+        guard let from = cfg.shortcuts.firstIndex(where: { $0.path == shortcut.path }) else { return }
+        let to = min(max(index, 0), cfg.shortcuts.count - 1)
+        guard from != to else { return }
+        cfg.shortcuts.insert(cfg.shortcuts.remove(at: from), at: to)
+        config = cfg
+    }
+
+    func saveConfig() {
+        config.save()
+    }
+
     /// Update the in-memory config without writing to disk — a drag changes it
     /// 120 times a second and only the final position is worth persisting.
     func applyLive(_ cfg: Config) {
@@ -224,6 +242,27 @@ final class UsageStore: ObservableObject {
                 guard let self else { return }
                 self.codexLive = live
                 self.codex = live
+            }
+        }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let live = GrokQuotaReader.read()
+            Task { @MainActor in
+                guard let self else { return }
+                // A failed read keeps the last one while it is still fresh:
+                // it is dated in the panel, and beats a blank.
+                let now = Date()
+                if let grok = live.grok {
+                    self.grok = grok
+                } else if let old = self.grok,
+                          now.timeIntervalSince(old.updatedAt) > self.quotaStaleAfter {
+                    self.grok = nil
+                }
+                if let cursor = live.cursor {
+                    self.cursor = cursor
+                } else if let old = self.cursor,
+                          now.timeIntervalSince(old.updatedAt) > self.quotaStaleAfter {
+                    self.cursor = nil
+                }
             }
         }
         let watched = accounts

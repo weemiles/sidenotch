@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var controller: NotchController?
     private var statusItem: NSStatusItem?
     private var loginItem: NSMenuItem?
+    private var notchItem: NSMenuItem?
+    private var recordingIndicator: RecordingIndicator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let store = UsageStore()
@@ -18,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         store.start()
         MemoryOptimizer.shared.start()
         installStatusItem()
+        if MeetilyRecorder.isInstalled {
+            recordingIndicator = RecordingIndicator(recorder: .shared)
+        }
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -43,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .target = self
         menu.addItem(withTitle: L.moveToCursorScreen, action: #selector(moveScreen), keyEquivalent: "")
             .target = self
+        let notch = menu.addItem(withTitle: L.hideInNotch, action: #selector(toggleNotchMode),
+                                 keyEquivalent: "")
+        notch.target = self
+        notchItem = notch
         menu.addItem(.separator())
         menu.addItem(withTitle: L.openSettings, action: #selector(openConfig), keyEquivalent: ",")
             .target = self
@@ -65,6 +74,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func refresh() { store?.refreshNow() }
 
     @objc private func moveScreen() { controller?.moveToScreenUnderCursor() }
+
+    @objc private func toggleNotchMode() {
+        guard let store else { return }
+        controller?.setNotchMode(!store.config.notchMode)
+    }
 
     @objc private func openConfig() {
         let url = Config.url
@@ -96,5 +110,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // also change it in System Settings, so a cached flag would drift.
     func menuNeedsUpdate(_ menu: NSMenu) {
         loginItem?.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        notchItem?.state = store?.config.notchMode == true ? .on : .off
     }
 }

@@ -19,53 +19,104 @@ struct Shortcut: Identifiable, Codable, Equatable {
 
     var id: String { path }
     var isWeb: Bool { path.hasPrefix("https://") || path.hasPrefix("http://") }
+    /// The Meetily record button. It lives in this list so it can be
+    /// reordered like any icon, but it is drawn and acts differently.
+    static let recorderPath = "sidenotch:meetily-record"
+    var isRecorder: Bool { path == Self.recorderPath }
+    static var recorder: Shortcut { Shortcut(path: recorderPath, name: "Meetily") }
     var url: URL {
         isWeb ? (URL(string: path) ?? URL(fileURLWithPath: path)) : URL(fileURLWithPath: path)
     }
-    var exists: Bool { isWeb || FileManager.default.fileExists(atPath: path) }
+    var exists: Bool { isRecorder || isWeb || FileManager.default.fileExists(atPath: path) }
 
     init(url: URL) {
         path = url.path
         name = FileManager.default.displayName(atPath: url.path)
     }
 
+    init(path: String, name: String) {
+        self.path = path
+        self.name = name
+    }
+
     func open() {
-        guard let app else {
-            NSWorkspace.shared.open(url)
+        if !isWeb, url.pathExtension.lowercased() == "app" {
+            AppLauncher.open(url)
             return
         }
-        let appURL = URL(fileURLWithPath: (app as NSString).expandingTildeInPath)
-        let url = url
-        let launch = {
-            NSWorkspace.shared.open([url], withApplicationAt: appURL,
-                                    configuration: NSWorkspace.OpenConfiguration())
-        }
-        guard isWeb, Bundle(url: appURL)?.bundleIdentifier == "com.apple.Safari",
-              !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Safari").isEmpty
-        else { return launch() }
-        // A web app the user already has open is brought forward, not opened
-        // again in a new tab. Apple Events block, so this stays off the main thread.
-        DispatchQueue.global(qos: .userInitiated).async {
-            if !Self.focusSafariTab(matching: url) { launch() }
+        let appURL = app.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+            ?? NSWorkspace.shared.urlForApplication(toOpen: url)
+        guard isWeb, let appURL,
+              let bundleID = Bundle(url: appURL)?.bundleIdentifier,
+              !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
+        else { return openNew(using: appURL) }
+
+        // A double click must not race two lookups into opening two tabs.
+        BrowserShortcutQueue.perform(key: path) {
+            let result = Self.focusBrowserTab(matching: self.url, bundleID: bundleID)
+            DispatchQueue.main.async {
+                switch result {
+                case .focused: break
+                case .notFound: self.openNew(using: appURL)
+                case .unavailable:
+                    // If Automation is unavailable, keep the existing browser
+                    // visible rather than silently creating a duplicate tab.
+                    AppLauncher.open(appURL)
+                }
+            }
         }
     }
 
-    /// Selects the first Safari tab on the same site (and under the same path,
-    /// so chatgpt.com/images does not grab an unrelated chat) and raises its window.
-    private static func focusSafariTab(matching url: URL) -> Bool {
-        guard var host = url.host?.lowercased() else { return false }
-        if host.hasPrefix("www.") { host.removeFirst(4) }
+    private func openNew(using appURL: URL?) {
+        guard let appURL else { NSWorkspace.shared.open(url); return }
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = false
+        NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config)
+    }
+
+    private enum TabFocusResult { case focused, notFound, unavailable }
+
+    private static func focusBrowserTab(matching url: URL, bundleID: String) -> TabFocusResult {
+        let safari = bundleID == "com.apple.Safari"
+        let chromium = ["com.google.Chrome", "com.google.Chrome.canary", "com.microsoft.edgemac",
+                        "com.brave.Browser", "org.chromium.Chromium"].contains(bundleID)
+        guard safari || chromium, let host = url.host?.lowercased() else { return .unavailable }
+        let bareHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         var path = url.path
         while path.hasSuffix("/") { path.removeLast() }
-        let bare = "://\(host)\(path)", www = "://www.\(host)\(path)"
+        // Image generation moves into /c/<conversation-id>. Treat that tab as
+        // the existing web app rather than requiring the /images landing page.
+        if bareHost == "chatgpt.com", path == "/images" || path.hasPrefix("/images/") {
+            path = ""
+        }
+        let prefixes = ["https://", "http://"].flatMap { scheme in
+            [scheme + bareHost + path, scheme + "www." + bareHost + path]
+        }
+        let candidates = prefixes.map { "\"" + appleScriptString($0) + "\"" }.joined(separator: ", ")
+        let selection = safari ? "set current tab of w to t" : "set active tab index of w to tabNumber"
         let source = """
-        tell application "Safari"
+        on siteMatches(address, prefixes)
+          if address is missing value then return false
+          repeat with prefix in prefixes
+            set p to contents of prefix
+            if address starts with p then
+              if (length of address) = (length of p) then return true
+              set boundary to character ((length of p) + 1) of address
+              if boundary is in {"/", "?", "#"} then return true
+            end if
+          end repeat
+          return false
+        end siteMatches
+        tell application id "\(appleScriptString(bundleID))"
           repeat with w in windows
+            set tabNumber to 0
             repeat with t in tabs of w
-              set u to URL of t
-              if u is not missing value and (u contains "\(bare)" or u contains "\(www)") then
-                set current tab of w to t
-                if miniaturized of w then set miniaturized of w to false
+              set tabNumber to tabNumber + 1
+              if my siteMatches(URL of t, {\(candidates)}) then
+                \(selection)
+                try
+                  set miniaturized of w to false
+                end try
                 set index of w to 1
                 activate
                 return true
@@ -77,8 +128,15 @@ struct Shortcut: Identifiable, Codable, Equatable {
         """
         var error: NSDictionary?
         let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
-        return error == nil && result?.booleanValue == true
+        guard error == nil, let result else { return .unavailable }
+        return result.booleanValue ? .focused : .notFound
     }
+
+    private static func appleScriptString(_ text: String) -> String {
+        text.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
 }
 
 /// `NSWorkspace.icon(forFile:)` hits the disk, and a Shape's body runs often —
@@ -123,5 +181,39 @@ extension MemoryHog {
             }
         }
         pids.forEach { kill($0, SIGTERM) }
+    }
+}
+
+/// Use activation for a running app; an open/reopen event can create a window.
+enum AppLauncher {
+    static func open(_ url: URL) {
+        let target = url.resolvingSymlinksInPath().standardizedFileURL
+        let bundleID = Bundle(url: target)?.bundleIdentifier
+        let running = NSWorkspace.shared.runningApplications.first { app in
+            guard !app.isTerminated else { return false }
+            return app.bundleURL?.resolvingSymlinksInPath().standardizedFileURL == target
+                || (bundleID != nil && app.bundleIdentifier == bundleID)
+        }
+        if let running {
+            running.activate(options: [])
+            return
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        config.createsNewApplicationInstance = false
+        NSWorkspace.shared.openApplication(at: target, configuration: config)
+    }
+}
+
+private enum BrowserShortcutQueue {
+    private static let queue = DispatchQueue(label: "sidenotch.browser-shortcut")
+    private static var lastRequests: [String: Date] = [:]
+    static func perform(key: String, _ action: @escaping () -> Void) {
+        queue.async {
+            let now = Date()
+            if let last = lastRequests[key], now.timeIntervalSince(last) < 1 { return }
+            lastRequests[key] = now
+            action()
+        }
     }
 }

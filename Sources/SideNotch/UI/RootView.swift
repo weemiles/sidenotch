@@ -14,6 +14,11 @@ struct WidgetSpec: Identifiable {
     var symbol: String? = nil
     /// Overrides the battery tint when the fill is not an allowance.
     var ringColor: Color? = nil
+    /// Draw Grok Bot's face, whose eyes follow the pointer, instead of `logo`.
+    var grokFace = false
+    /// App a click opens, or brings forward if it is already running, in
+    /// place of pinning the panel.
+    var app: String? = nil
 }
 
 /// Reports interactive regions up to the hosting view so everything else stays
@@ -22,6 +27,14 @@ struct HitRectsKey: PreferenceKey {
     static var defaultValue: [CGRect] { [] }
     static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) {
         value += nextValue()
+    }
+}
+
+/// Height the open detail actually needs on the top edge.
+struct DetailHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
@@ -102,7 +115,33 @@ struct RootView: View {
                 markColor: Theme.openaiMark,
                 remaining: store.codex.remaining,
                 caption: p.map { Fmt.percent($0.remaining) } ?? "–",
-                available: p != nil
+                available: p != nil,
+                app: "/Applications/ChatGPT.app"
+            ))
+        }
+        if store.config.showGrok {
+            let g = store.grok
+            out.append(WidgetSpec(
+                id: "grok",
+                logo: "",
+                markColor: Theme.grokMark,
+                remaining: g?.remaining ?? 1,
+                caption: g.map { Fmt.percent($0.remaining) } ?? "–",
+                available: g != nil,
+                grokFace: true,
+                app: "/Applications/Grok Bot.app"
+            ))
+        }
+        if store.config.showCursor {
+            let c = store.cursor
+            out.append(WidgetSpec(
+                id: "cursor",
+                logo: BrandMark.cursor,
+                markColor: Theme.cursorMark,
+                remaining: c?.remaining ?? 1,
+                caption: c.map { Fmt.percent($0.remaining) } ?? "–",
+                available: c != nil,
+                app: "/Applications/Cursor.app"
             ))
         }
         return out
@@ -135,6 +174,7 @@ struct RootView: View {
         .coordinateSpace(name: "root")
         .animation(Motion.panel(active: isOpen), value: state.active)
         .animation(Motion.panel(active: isOpen), value: state.displayed)
+        .animation(Motion.panel(active: state.revealed), value: state.revealed)
         .onPreferenceChange(HitRectsKey.self, perform: onHitRects)
         .onPreferenceChange(DropRectKey.self, perform: onDropRect)
     }
@@ -157,6 +197,12 @@ struct RootView: View {
     /// the rail without lengthening what pops out.
     private var isTop: Bool { edge == .top }
 
+    /// Hidden in the camera notch until the pointer reaches it.
+    private var notchMode: Bool { store.config.notchMode && isTop }
+    private var collapsed: Bool { notchMode && !state.revealed }
+    /// Grown out of the notch, the icons sit below the camera housing, not behind it.
+    private var notchInset: CGFloat { notchMode ? state.notchSize.height : 0 }
+
     private var island: some View {
         ZStack(alignment: islandAlignment) {
             // On the side edges the detail is a separate shape tucked under the
@@ -173,42 +219,180 @@ struct RootView: View {
     /// right and down; on the sides it is just the rail.
     private var shell: some View {
         Group {
-            if isTop {
+            if notchMode {
+                notchBody
+                    .opacity(collapsed ? 0 : 1)
+                    .transformPreference(HitRectsKey.self) { if collapsed { $0 = [] } }
+                    .transformPreference(DropRectKey.self) { if collapsed { $0 = .zero } }
+            } else if isTop {
                 VStack(alignment: .leading, spacing: 0) {
                     RailColumn(edge: edge, specs: specs, state: state, store: store)
                         .frame(width: railLength,
                                height: Metrics.railThickness(edge: edge),
                                alignment: .leading)
+                        .padding(.top, notchInset)
                     if let spec = displayedSpec {
+                        // Lined up with the first ring on the left and the last
+                        // icon on the right, and only as tall as what it says.
                         WidgetBody(spec: spec, store: store)
-                            .frame(width: Metrics.detailWidth,
-                                   height: gaugeBlock,
-                                   alignment: .topLeading)
-                            .padding(.horizontal, Metrics.detailPadding)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(width: topDetailWidth, alignment: .topLeading)
+                            .background(GeometryReader { geo in
+                                Color.clear.preference(key: DetailHeightKey.self,
+                                                       value: geo.size.height)
+                            })
+                            .padding(.leading, topInsetLeading)
+                            .padding(.top, Metrics.topDetailGap)
                             .opacity(isOpen ? 1 : 0)
                             .onHover(perform: holdOpen)
                     }
                 }
+                // Folded into the notch nothing inside may catch the mouse or a
+                // dropped file: the shape is the size of the camera housing.
+                .opacity(collapsed ? 0 : 1)
+                .transformPreference(HitRectsKey.self) { if collapsed { $0 = [] } }
+                .transformPreference(DropRectKey.self) { if collapsed { $0 = .zero } }
             } else {
                 RailColumn(edge: edge, specs: specs, state: state, store: store)
                     .frame(width: railFrame.width, height: railFrame.height,
                            alignment: railContentAlignment)
             }
         }
-        .frame(width: shellSize.width, height: shellSize.height, alignment: .topLeading)
+        .frame(width: shellSize.width, height: shellSize.height,
+               alignment: notchMode ? .top : .topLeading)
         .clipped()
         // The flares are drawn *outside* the content area; without this margin
         // the notch curves eat into the first and last rows.
-        .padding(edge.isVertical ? .vertical : .horizontal, Metrics.flare)
-        .background(NotchShape(edge: edge).fill(Theme.shell))
-        .clipShape(NotchShape(edge: edge))
-        .reportHitRect(isTop && isOpen)
+        .padding(edge.isVertical ? .vertical : .horizontal, shellFlare)
+        .background(shellShape.fill(Theme.shell))
+        .clipShape(shellShape)
+        // The wings differ in width, so the shape slides sideways by half the
+        // difference to keep the gap between them over the camera.
+        .offset(x: notchMode && !collapsed ? (wings.right - wings.left) / 2 : 0)
+        .onPreferenceChange(DetailHeightKey.self) { detailHeight = $0 }
+        .reportHitRect(isTop && (isOpen || notchMode))
+
     }
 
     private var shellSize: CGSize {
-        isTop
-            ? Metrics.topShellSize(gauges: specs.count, shortcuts: slotCount, open: isOpen)
-            : railFrame
+        if collapsed {
+            // The flares are drawn outside this box, so they have to fit inside
+            // the camera housing too; a point short on each side keeps the
+            // antialiased edge from peeking past the hardware.
+            return CGSize(width: max(state.notchSize.width - Metrics.notchFlare * 2 - 2, 0),
+                          height: max(state.notchSize.height - 1, 0))
+        }
+        guard isTop else { return railFrame }
+        if notchMode {
+            var height = Metrics.wingStripHeight(notch: state.notchSize)
+            if isOpen && detailHeight > 0 {
+                height += Metrics.topDetailGap + detailHeight + Metrics.wingPadOuter
+            }
+            return CGSize(width: wings.left + state.notchSize.width + wings.right, height: height)
+        }
+        var height = Metrics.railThickness(edge: edge) + notchInset
+        if isOpen && detailHeight > 0 {
+            height += Metrics.topDetailGap + detailHeight + topInsetLeading
+        }
+        return CGSize(width: max(railLength, Metrics.detailWidth + topInsetLeading + topInsetTrailing),
+                      height: height)
+    }
+
+    /// In notch mode the silhouette uses the camera housing's own corners, so
+    /// folded it matches the hardware and grown it reads as the same object.
+    private var shellFlare: CGFloat { notchMode ? Metrics.notchFlare : Metrics.flare }
+    private var shellShape: NotchShape {
+        notchMode
+            ? NotchShape(edge: edge, cornerRadius: Metrics.notchCorner, flare: Metrics.notchFlare)
+            : NotchShape(edge: edge)
+    }
+
+    private var wings: (left: CGFloat, right: CGFloat) {
+        Metrics.wingWidths(gauges: specs.count, shortcuts: slotCount)
+    }
+
+    /// Grown out of the notch: one strip the height of the menu bar, gauges on
+    /// the notch's left and shortcuts on its right, the detail opening under
+    /// the gauges.
+    private var notchBody: some View {
+        let strip = Metrics.wingStripHeight(notch: state.notchSize)
+        let height = max(Metrics.wingRing, Metrics.wingIcon)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    ForEach(specs) { spec in
+                        RailItem(spec: spec, state: state,
+                                 isActive: state.active == spec.id, compact: true)
+                            .frame(width: Metrics.wingGaugeSlot, height: height)
+                    }
+                }
+                .padding(.leading, Metrics.wingPadOuter)
+                .frame(width: wings.left, alignment: .leading)
+
+                Color.clear.frame(width: state.notchSize.width, height: height)
+
+                HStack(spacing: 0) {
+                    ForEach(shortcuts) { shortcut in
+                        ShortcutItem(shortcut: shortcut, axis: .horizontal,
+                                     state: state, store: store,
+                                     slot: Metrics.wingShortcutSlot,
+                                     iconSize: Metrics.wingIcon)
+                            .frame(width: Metrics.wingShortcutSlot, height: height)
+                            .transition(.gooeyDrop)
+                    }
+                    if state.dropTargeting {
+                        DropSlot()
+                            .scaleEffect(Metrics.wingIcon / Metrics.iconDiameter)
+                            .frame(width: Metrics.wingShortcutSlot, height: height)
+                            .transition(.gooeyDrop)
+                    }
+                }
+                .padding(.leading, Metrics.wingPadInner)
+                .frame(width: wings.right, alignment: .leading)
+                .background(GeometryReader { geo in
+                    Color.clear.preference(key: DropRectKey.self,
+                                           value: geo.frame(in: .named("root")))
+                })
+                .animation(Motion.gooey, value: shortcuts)
+            }
+            .padding(.top, Metrics.wingPadTop)
+            .frame(height: strip, alignment: .top)
+
+            if let spec = displayedSpec {
+                WidgetBody(spec: spec, store: store)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: max(Metrics.detailWidth,
+                                      wings.left - Metrics.wingPadOuter - Metrics.wingPadInner),
+                           alignment: .topLeading)
+                    .background(GeometryReader { geo in
+                        Color.clear.preference(key: DetailHeightKey.self, value: geo.size.height)
+                    })
+                    .padding(.leading, Metrics.wingPadOuter)
+                    .padding(.top, Metrics.topDetailGap)
+                    .opacity(isOpen ? 1 : 0)
+                    .onHover(perform: holdOpen)
+            }
+        }
+    }
+
+    /// Measured height of the open detail on the top edge.
+    @State private var detailHeight: CGFloat = 0
+
+    /// Where the first ring starts inside the rail: the rail's own padding plus
+    /// the space a gauge slot leaves either side of its ring.
+    private var topInsetLeading: CGFloat {
+        Metrics.railPaddingV + (Metrics.rowHeight - Metrics.iconDiameter) / 2
+    }
+
+    /// Where the last icon ends — a shortcut slot is narrower than a gauge slot.
+    private var topInsetTrailing: CGFloat {
+        let slot = slotCount > 0 ? Metrics.shortcutRow : Metrics.rowHeight
+        return Metrics.railPaddingV + (slot - Metrics.iconDiameter) / 2
+    }
+
+    private var topDetailWidth: CGFloat {
+        max(railLength, Metrics.detailWidth + topInsetLeading + topInsetTrailing)
+            - topInsetLeading - topInsetTrailing
     }
 
     // MARK: Geometry
@@ -233,7 +417,13 @@ struct RootView: View {
     }
 
     private var islandSize: CGSize {
-        Metrics.islandSize(edge: edge, gauges: specs.count, shortcuts: slotCount)
+        if notchMode {
+            return Metrics.notchIslandSize(gauges: specs.count, shortcuts: slotCount,
+                                           notch: state.notchSize)
+        }
+        var size = Metrics.islandSize(edge: edge, gauges: specs.count, shortcuts: slotCount)
+        size.height += notchInset
+        return size
     }
 
     /// The corner the island hangs from: the start of its edge.
@@ -241,7 +431,7 @@ struct RootView: View {
         switch edge {
         case .left:  return .topLeading
         case .right: return .topTrailing
-        case .top:   return .topLeading
+        case .top:   return notchMode ? .top : .topLeading
         }
     }
 
@@ -377,7 +567,7 @@ struct RailColumn: View {
             }
 
             ForEach(shortcuts) { shortcut in
-                ShortcutItem(shortcut: shortcut, state: state, store: store)
+                ShortcutItem(shortcut: shortcut, axis: axis, state: state, store: store)
                     .frame(width: axis == .horizontal ? Metrics.shortcutRow : nil,
                            height: axis == .vertical ? Metrics.shortcutRow : nil)
                     .transition(.gooeyDrop)
@@ -423,6 +613,75 @@ private struct BlurModifier: ViewModifier {
     func body(content: Content) -> some View { content.blur(radius: radius) }
 }
 
+/// The Meetily record button's face. Red with a white stop square while it
+/// records, with a ring that keeps rippling out so it reads as live.
+struct RecordGlyph: View {
+    let size: CGFloat
+    @ObservedObject private var recorder = MeetilyRecorder.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Smaller than an app icon: an app icon's square fills its frame, a
+    /// circle of the same width looks heavier.
+    private var diameter: CGFloat { size * 0.7 }
+
+    var body: some View {
+        ZStack {
+            if recorder.status == .recording, !reduceMotion {
+                Ripple(diameter: diameter)
+            }
+            face
+                .frame(width: diameter, height: diameter)
+        }
+        .frame(width: size, height: size)
+        .animation(.easeOut(duration: 0.2), value: recorder.status)
+    }
+
+    @ViewBuilder private var face: some View {
+        switch recorder.status {
+        case .recording:
+            Image(systemName: "stop.circle.fill")
+                .resizable()
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, Theme.danger)
+        case .paused:
+            Image(systemName: "stop.circle.fill")
+                .resizable()
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, Theme.warn)
+        case .idle:
+            Image(systemName: "record.circle")
+                .resizable()
+                .fontWeight(.light)
+                .foregroundStyle(Theme.textPrimary)
+        case .notRunning, .noPermission, .busy:
+            Image(systemName: "record.circle")
+                .resizable()
+                .fontWeight(.light)
+                .foregroundStyle(Theme.textTertiary)
+        }
+    }
+}
+
+/// A thin ring that leaves the button and fades, once every 1.6 s.
+private struct Ripple: View {
+    let diameter: CGFloat
+    private let period: Double = 1.6
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+                .truncatingRemainder(dividingBy: period) / period
+            let eased = 1 - (1 - t) * (1 - t)
+            Circle()
+                .stroke(Theme.danger, lineWidth: 1.5)
+                .frame(width: diameter, height: diameter)
+                .scaleEffect(1 + 0.4 * eased)
+                .opacity(0.6 * (1 - eased))
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 /// The landing spot that opens up while a file is held over the rail.
 struct DropSlot: View {
     @State private var breathing = false
@@ -442,41 +701,96 @@ struct DropSlot: View {
 
 struct ShortcutItem: View {
     let shortcut: Shortcut
+    let axis: Axis
     @ObservedObject var state: PanelState
     @ObservedObject var store: UsageStore
+    /// Length of one slot along the rail, which is how far a reorder moves it.
+    var slot: CGFloat = Metrics.shortcutRow
+    var iconSize: CGFloat = Metrics.iconDiameter
+
+    /// Slot the icon was in when the drag began; reordering is measured from it.
+    @State private var startIndex: Int?
 
     private var isPulling: Bool { state.pulling == shortcut.path }
-    private var leaving: Bool { isPulling && state.pullingOut }
+    /// The record button cannot be removed, so it never looks like it is leaving.
+    private var leaving: Bool { isPulling && state.pullingOut && !shortcut.isRecorder }
+
+    private var index: Int {
+        store.config.shortcuts.firstIndex { $0.path == shortcut.path } ?? 0
+    }
+
+    /// The pointer's travel, less the slots the icon has already moved into —
+    /// so it stays under the pointer while its neighbours slide past.
+    private var dragOffset: CGSize {
+        guard isPulling else { return .zero }
+        var offset = state.pullOffset
+        let moved = CGFloat(state.pullShift) * slot
+        if axis == .vertical { offset.height -= moved } else { offset.width -= moved }
+        return offset
+    }
+
+    @ViewBuilder private var icon: some View {
+        if shortcut.isRecorder {
+            RecordGlyph(size: iconSize)
+        } else {
+            Image(nsImage: ShortcutIcon.image(for: shortcut))
+                .resizable()
+                .interpolation(.high)
+                .frame(width: iconSize, height: iconSize)
+                .opacity(shortcut.exists ? 1 : 0.35)
+        }
+    }
 
     var body: some View {
-        Image(nsImage: ShortcutIcon.image(for: shortcut))
-            .resizable()
-            .interpolation(.high)
-            .frame(width: Metrics.iconDiameter, height: Metrics.iconDiameter)
-            .opacity(shortcut.exists ? 1 : 0.35)
+        icon
             // While it is being pulled out it follows the pointer and thins out,
             // so letting go past the threshold reads as intentional.
-            .offset(isPulling ? state.pullOffset : .zero)
+            .offset(dragOffset)
             .scaleEffect(leaving ? 0.8 : (isPulling ? 1.08 : 1))
             .opacity(leaving ? 0.45 : 1)
             .blur(radius: leaving ? 3 : 0)
+            // The held icon tracks the pointer exactly; only its neighbours animate.
+            .transaction { if isPulling { $0.animation = nil } }
             .animation(Motion.gooey, value: isPulling)
             .animation(Motion.gooey, value: leaving)
+            .zIndex(isPulling ? 1 : 0)
             .contentShape(Circle())
             .reportHitRect()
-            .help(shortcut.name)
-            .onTapGesture { shortcut.open() }
+            .help(shortcut.isRecorder ? L.recorder(MeetilyRecorder.shared.status) : shortcut.name)
+            .onTapGesture {
+                if shortcut.isRecorder { MeetilyRecorder.shared.openApp() } else { shortcut.open() }
+            }
             .gesture(
-                DragGesture(minimumDistance: 4)
+                DragGesture(minimumDistance: 4, coordinateSpace: .global)
                     .onChanged { value in
-                        state.beginPull(shortcut.path)
+                        if startIndex == nil { startIndex = index }
+                        state.beginPull(shortcut.path, axis: axis)
                         state.updatePull(value.translation)
+                        reorder(for: value.translation)
                     }
                     .onEnded { value in
                         state.updatePull(value.translation)
-                        if state.endPull() { store.removeShortcut(shortcut) }
+                        reorder(for: value.translation)
+                        let moved = state.pullShift != 0
+                        startIndex = nil
+                        if state.endPull(), !shortcut.isRecorder {
+                            store.removeShortcut(shortcut)
+                        } else if moved {
+                            store.saveConfig()
+                        }
                     }
             )
+    }
+
+    /// Moves the icon one slot at a time as the pointer crosses into the next row.
+    private func reorder(for translation: CGSize) {
+        guard !state.pullingOut, let start = startIndex else { return }
+        let along = axis == .vertical ? translation.height : translation.width
+        let count = store.config.shortcuts.count
+        let target = min(max(start + Int((along / slot).rounded()), 0), count - 1)
+        guard target != index else { return }
+        withAnimation(Motion.gooey) { store.moveShortcutLive(shortcut, to: target) }
+        state.updateShift(target - start)
     }
 }
 
@@ -484,6 +798,11 @@ struct RailItem: View {
     let spec: WidgetSpec
     @ObservedObject var state: PanelState
     let isActive: Bool
+    /// In the notch's wing: a smaller ring with its percentage beside it, so
+    /// the whole gauge fits in the height of the menu bar.
+    var compact = false
+
+    private var diameter: CGFloat { compact ? Metrics.wingRing : Metrics.iconDiameter }
 
     private var tint: Color {
         guard spec.available else { return Theme.textTertiary }
@@ -491,21 +810,39 @@ struct RailItem: View {
     }
 
     var body: some View {
-        VStack(spacing: Metrics.captionSpacing) {
+        let layout = compact
+            ? AnyLayout(HStackLayout(spacing: 5))
+            : AnyLayout(VStackLayout(spacing: Metrics.captionSpacing))
+        layout {
             ZStack {
                 ArcGauge(remaining: spec.remaining, color: tint)
-                if let symbol = spec.symbol {
+                if spec.grokFace {
+                    GrokFace(color: spec.available ? spec.markColor : Theme.textTertiary, still: true)
+                        .frame(width: diameter * 0.50, height: diameter * 0.50)
+                } else if let symbol = spec.symbol {
                     Image(systemName: symbol)
-                        .font(.system(size: Metrics.iconDiameter * 0.40, weight: .medium))
+                        .font(.system(size: diameter * 0.40, weight: .medium))
                         .foregroundStyle(spec.available ? spec.markColor : Theme.textTertiary)
                 } else {
                     SVGShape(data: spec.logo)
                         .fill(spec.available ? spec.markColor : Theme.textTertiary)
-                        .frame(width: Metrics.iconDiameter * 0.46,
-                               height: Metrics.iconDiameter * 0.46)
+                        .frame(width: diameter * 0.46, height: diameter * 0.46)
                 }
             }
-            .frame(width: Metrics.iconDiameter, height: Metrics.iconDiameter)
+            .frame(width: diameter, height: diameter)
+            // In the wing there is no caption row, so the percentage sits in the
+            // open gap at the bottom of the arc.
+            .overlay(alignment: .bottom) {
+                if compact {
+                    Text(spec.caption.replacingOccurrences(of: "%", with: ""))
+                        .font(.system(size: 8, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(spec.available ? Theme.textSecondary : Theme.textTertiary)
+                        .fixedSize()
+                        .offset(y: 4)
+                        .allowsHitTesting(false)
+                }
+            }
             .scaleEffect(isActive ? 1.08 : 1)
             // Only the logo is the trigger — the shell around it stays inert.
             .contentShape(Circle())
@@ -513,7 +850,13 @@ struct RailItem: View {
             .onHover { inside in
                 if inside { state.enter(spec.id) } else { state.leave(spec.id) }
             }
-            .onTapGesture { state.togglePin(spec.id) }
+            .onTapGesture {
+                if let app = spec.app {
+                    AppLauncher.open(URL(fileURLWithPath: app))
+                } else {
+                    state.togglePin(spec.id)
+                }
+            }
             // 4pt of slack so a click still reads as a click, not a nudge.
             // The gesture only says *that* a drag is happening. Its translation
             // is measured in the view, and the view rides along with the window
@@ -538,6 +881,7 @@ struct RailItem: View {
             )
             .animation(Motion.panel(active: isActive), value: isActive)
 
+            if !compact {
             HStack(spacing: 3) {
                 // Two Claude logos on one rail are the same drawing, so the
                 // number is the only thing telling them apart. It rides with the
@@ -557,6 +901,7 @@ struct RailItem: View {
             // what keeps the column optically centred in the island.
             .frame(height: Metrics.captionHeight)
             .allowsHitTesting(false)
+            }
         }
     }
 }

@@ -20,6 +20,8 @@ enum Theme {
     static let claudeMark = Color(red: 0xD9 / 255, green: 0x77 / 255, blue: 0x57 / 255)
     static let openaiMark = Color.white.opacity(0.92)
     static let memoryMark = Color.white.opacity(0.92)
+    static let grokMark = Color(white: 0.86)
+    static let cursorMark = Color.white.opacity(0.92)
 
     /// RAM reads the other way round from an allowance: the fuller it is, the
     /// redder. Memory pressure can still raise it — a machine that is already
@@ -58,6 +60,53 @@ enum Metrics {
     static let detailWidth: CGFloat = 248
     static let detailPadding: CGFloat = 13
     static let detailCorner: CGFloat = 18
+    /// Space between the top edge's gauge captions and the detail below them.
+    static let topDetailGap: CGFloat = 8
+
+    // MARK: Notch wings
+    //
+    // Grown out of the camera notch the island is one strip the height of the
+    // menu bar: gauges on the notch's left, shortcuts on its right.
+
+    /// The camera housing's own corners, measured on a 14-inch MacBook Pro:
+    /// about 4 pt where it meets the top edge, 8 pt at the bottom.
+    static let notchFlare: CGFloat = 4
+    static let notchCorner: CGFloat = 8
+
+    static let wingRing: CGFloat = 32
+    static let wingIcon: CGFloat = 33
+    /// Just the ring — the percentage lives in the detail.
+    static let wingGaugeSlot: CGFloat = 46
+    static let wingShortcutSlot: CGFloat = 46
+    /// From the far end of a wing to its first item.
+    static let wingPadOuter: CGFloat = 12
+    /// From the notch to the item nearest it.
+    static let wingPadInner: CGFloat = 10
+    /// Above the icons: they sit beside the camera, so this only clears the bezel.
+    static let wingPadTop: CGFloat = 8
+    /// Grown out of the notch the strip is taller than the notch, so the space
+    /// under the icons matches the space at either end.
+    static func wingStripHeight(notch: CGSize) -> CGFloat {
+        max(notch.height, wingPadTop + max(wingRing, wingIcon) + wingPadOuter)
+    }
+
+    /// Room for the detail that opens under the left wing.
+    static let wingDetailRoom: CGFloat = 380
+
+    static func wingWidths(gauges: Int, shortcuts: Int) -> (left: CGFloat, right: CGFloat) {
+        let left = wingPadOuter + wingPadInner + CGFloat(gauges) * wingGaugeSlot
+        let right = shortcuts > 0
+            ? wingPadOuter + wingPadInner + CGFloat(shortcuts) * wingShortcutSlot : 0
+        return (left, right)
+    }
+
+    /// Largest the notch island gets: both wings as wide as the wider one, so it
+    /// can shift sideways to keep the gap over the camera, plus the detail below.
+    static func notchIslandSize(gauges: Int, shortcuts: Int, notch: CGSize) -> CGSize {
+        let w = wingWidths(gauges: gauges, shortcuts: shortcuts)
+        return CGSize(width: max(w.left, w.right) * 2 + notch.width + notchFlare * 2,
+                      height: wingStripHeight(notch: notch) + wingDetailRoom)
+    }
     /// The bulge starts under the rail so the two solid-black shapes merge.
     /// It has to reach past the rail's corner radius, otherwise the rail's
     /// top-right curve and the bulge's top-left curve bend opposite ways and

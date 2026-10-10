@@ -25,7 +25,14 @@ struct Config: Codable, Equatable {
 
     var showClaude: Bool = true
     var showCodex: Bool = true
+    var showGrok: Bool = true
+    var showCursor: Bool = true
     var showMemory: Bool = true
+
+    /// Day of the month each plan renews, for the accounts that do not say:
+    /// "codex", and "claude" — or "claude1", "claude2" when there are several.
+    /// Grok Bot and Cursor report their own billing cycle.
+    var billingDays: [String: Int] = [:]
 
     /// Display the rail sits on. nil = the primary screen.
     var displayID: UInt32? = nil
@@ -35,6 +42,10 @@ struct Config: Codable, Equatable {
 
     /// Position along that edge. 0 = start (top or left), 1 = end. 0.5 centres it.
     var anchor: Double = 0.5
+
+    /// Hide inside the MacBook's camera notch and grow out of it only while the
+    /// pointer is on it. Implies the top edge, centred on the notch.
+    var notchMode: Bool = false
 
     /// Apps dropped onto the rail, in the order they appear.
     var shortcuts: [Shortcut] = []
@@ -69,6 +80,23 @@ struct Config: Codable, Equatable {
         claudeFiveHourBudgetUSD != nil ? 0 : (claudeBudgetAuto[account.id]?.samples ?? 0)
     }
 
+    /// The next renewal of the plan billed on `billingDays[key]`, today included.
+    func nextBilling(_ key: String, from now: Date = Date()) -> Date? {
+        guard let day = billingDays[key], (1...31).contains(day) else { return nil }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: now)
+        guard let thisMonth = cal.date(from: cal.dateComponents([.year, .month], from: today)) else { return nil }
+        for offset in 0...1 {
+            guard let month = cal.date(byAdding: .month, value: offset, to: thisMonth),
+                  let length = cal.range(of: .day, in: .month, for: month)?.count else { continue }
+            // A plan started on the 31st renews on a short month's last day.
+            if let date = cal.date(byAdding: .day, value: min(day, length) - 1, to: month), date >= today {
+                return date
+            }
+        }
+        return nil
+    }
+
     func needsCalibration(_ account: ClaudeAccount) -> Bool {
         guard claudeFiveHourBudgetUSD == nil else { return false }
         guard let known = claudeBudgetAuto[account.id] else { return true }
@@ -77,8 +105,8 @@ struct Config: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case claudeFiveHourBudgetUSD, claudeConfigDirs, claudeBudgetAuto
-        case fastPollSeconds, slowPollSeconds, showClaude, showCodex, showMemory
-        case displayID, edge, anchor, shortcuts, verticalAnchor
+        case fastPollSeconds, slowPollSeconds, showClaude, showCodex, showGrok, showCursor, showMemory, billingDays
+        case displayID, edge, anchor, notchMode, shortcuts, verticalAnchor
     }
 
     /// Fields that existed before a machine could hold two accounts. Read only
@@ -110,24 +138,37 @@ struct Config: Codable, Equatable {
         slowPollSeconds = try c.decodeIfPresent(Double.self, forKey: .slowPollSeconds) ?? d.slowPollSeconds
         showClaude = try c.decodeIfPresent(Bool.self, forKey: .showClaude) ?? d.showClaude
         showCodex = try c.decodeIfPresent(Bool.self, forKey: .showCodex) ?? d.showCodex
+        showGrok = try c.decodeIfPresent(Bool.self, forKey: .showGrok) ?? d.showGrok
+        showCursor = try c.decodeIfPresent(Bool.self, forKey: .showCursor) ?? d.showCursor
         showMemory = try c.decodeIfPresent(Bool.self, forKey: .showMemory) ?? d.showMemory
+        billingDays = try c.decodeIfPresent([String: Int].self, forKey: .billingDays) ?? d.billingDays
         displayID = try c.decodeIfPresent(UInt32.self, forKey: .displayID)
         edge = try c.decodeIfPresent(NotchEdge.self, forKey: .edge) ?? d.edge
         // `verticalAnchor` is what this was called when left was the only edge.
         anchor = try c.decodeIfPresent(Double.self, forKey: .anchor)
             ?? c.decodeIfPresent(Double.self, forKey: .verticalAnchor)
             ?? d.anchor
+        notchMode = try c.decodeIfPresent(Bool.self, forKey: .notchMode) ?? d.notchMode
         shortcuts = try c.decodeIfPresent([Shortcut].self, forKey: .shortcuts) ?? d.shortcuts
     }
 
     static func load() -> Config {
         guard let data = try? Data(contentsOf: url),
-              let cfg = try? JSONDecoder().decode(Config.self, from: data) else {
-            let fresh = Config()
+              var cfg = try? JSONDecoder().decode(Config.self, from: data) else {
+            var fresh = Config()
+            fresh.addRecorderIfNeeded()
             fresh.save()
             return fresh
         }
+        cfg.addRecorderIfNeeded()
         return cfg
+    }
+
+    /// The record button can be moved but not removed, so it is put back at
+    /// the end whenever it is missing.
+    private mutating func addRecorderIfNeeded() {
+        guard MeetilyRecorder.isInstalled, !shortcuts.contains(where: \.isRecorder) else { return }
+        shortcuts.append(.recorder)
     }
 
     func save() {

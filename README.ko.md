@@ -1,8 +1,8 @@
 # SideNotch
 
 맥 화면 **가장자리**에서 자라나는 노치. 끌면 왼쪽·위·오른쪽 변을 따라 붙은 채로
-미끄러지고 모서리에서 방향을 튼다. Claude Code와 Codex의 남은 한도를
-로고 둘레의 아크 게이지로 보여주고, 로고에 마우스를 올리면 옆으로 늘어나며
+미끄러지고 모서리에서 방향을 튼다. Claude Code·Codex·Grok Bot·Cursor의 남은 한도와
+메모리 사용량을 로고 둘레의 아크 게이지로 보여주고, 다음 결제일까지 며칠 남았는지도 알려준다. 로고에 마우스를 올리면 옆으로 늘어나며
 상세를 펼친다. 앱을 끌어다 놓으면 런처가 된다.
 
 **[English README](README.md)**
@@ -41,6 +41,10 @@ Finder나 Dock에서 앱을 끌어다 레일 위에 놓으면 게이지 아래�
 
 경로는 `config.json`의 `shortcuts`에 저장된다. 앱을 지웠거나 옮겼으면 아이콘이
 흐리게 표시된다.
+
+[Meetily](https://meetily.ai)가 설치돼 있으면 바로가기 끝에 녹음 버튼이 붙는다.
+녹음 중에는 빨갛게 바뀌고, 누르면 Meetily 창이 열린다. 순서는 옮길 수 있지만
+지울 수는 없다.
 
 **옆으로 튀어나오는 상세 패널은 게이지 높이에만 걸린다.** 바로가기를 아무리
 추가해도 레일만 길어지고 튀어나오는 부분은 그대로다.
@@ -101,10 +105,19 @@ cd sidenotch
 ./install.sh
 ```
 
-`/Applications/SideNotch.app`에 설치하고 바로 실행한다. 본인 맥에서 ad-hoc
-서명하므로 Gatekeeper에 걸리지 않는다. 샌드박스가 아니고 별도 권한도 요구하지
-않으며, 홈 디렉터리의 파일만 읽는다. 메뉴바의 `▐` 아이콘에서
-**로그인 시 자동 실행**을 켜면 부팅 후에도 자동으로 뜬다.
+`/Applications/SideNotch.app`에 설치하고 바로 실행한다. 본인 맥에서 서명하므로
+(Apple Development 인증서가 있으면 그것으로, 없으면 ad-hoc) Gatekeeper에 걸리지
+않는다. 샌드박스가 아니다. 메뉴바의 `▐` 아이콘에서 **로그인 시 자동 실행**을 켜면
+부팅 후에도 자동으로 뜬다.
+
+추가 권한 없이도 동작한다. 아래 두 권한은 선택이다.
+
+- **키체인** — "Grok Bot Safe Storage" 사용 허용 창이 한 번 뜬다. Cursor에 로그인하지
+  않았을 때 Grok Bot 게이지를 보려면 허용한다.
+- **손쉬운 사용** — Meetily 녹음 버튼으로 녹음을 켜고 끌 때만 필요하다. 없어도 녹음 중인지는 표시된다.
+
+쓰는 AI가 다르면 [설정](#설정)의 `show…` 키로 필요 없는 게이지를 끈다. 앱이 없는
+게이지는 `–`로만 표시된다.
 
 개발 중에는 `./build.sh` 로 `build/SideNotch.app`만 만들 수 있다.
 
@@ -113,10 +126,17 @@ cd sidenotch
 | 표시 | 출처 | 정확도 |
 |---|---|---|
 | Codex 사용률·리셋 시각 | `~/.codex/sessions/**/rollout-*.jsonl` 의 `rate_limits` | **정확** (서버가 매 턴 내려주는 값) |
-
 | Claude 실행 중 세션 | `~/.claude/sessions/*.json` | **정확** (pid 생존 확인까지 함) |
 | Claude 세션·주간·모델별 한도 | `api.anthropic.com/api/oauth/usage` (Claude Code가 키체인에 둔 로그인 사용) | **정확** (`/usage`와 같은 값) |
 | Claude 5시간 창 사용량 (대체) | `~/.claude/projects/**/*.jsonl` 의 `message.usage` | **추정** |
+| Grok Bot 한도 | Cursor 대시보드 API(`GetSandUsageStatus`), Cursor 로그인 또는 Grok Bot 로그인 사용 | **정확** (Grok Bot 사용량 화면과 같은 값) |
+| Cursor 한도·결제일 | Cursor 대시보드 API(`GetCurrentPeriodUsage`) | **정확** |
+| 메모리 | `host_statistics64`, 활동 모니터와 같은 방식으로 계산 | **정확** |
+| 다음 결제일 (Claude, Codex) | 설정의 `billingDays` — 매달 결제되는 날짜 | 입력한 대로 |
+
+Grok Bot은 Cursor 계정으로 결제되므로 Cursor 결제일을 보여준다. Claude와 Codex
+로그인 정보에는 SideNotch가 읽는 결제일이 없어서 날짜를 한 번 적어 둔다. ChatGPT는
+설정 → 플랜, Claude는 설정 → 결제에서 확인할 수 있다.
 
 Claude 링은 1분마다 계정의 실제 한도를 Anthropic에 물어본다 — `/usage`가 보여주는
 바로 그 값이다. 링에는 이번 주에 남은 양, 즉 전체 모델 주간 한도를 표시하고, 5시간
@@ -166,12 +186,15 @@ rollout 파일은 세션이 **시작한 날짜** 폴더에 들어간다. 어젯�
 | `claudeFiveHourBudgetUSD` | *(자동)* | Claude 게이지가 0%가 되는 지점. 비워두면 이력에서 계산 |
 | `fastPollSeconds` | `2` | 세션·Codex 갱신 주기 |
 | `slowPollSeconds` | `20` | Claude 토큰 로그 스캔 주기 |
-| `showClaude` / `showCodex` | `true` | 레일에 띄울 위젯 |
+| `showClaude` / `showCodex` / `showGrok` / `showCursor` / `showMemory` | `true` | 레일에 띄울 위젯 |
+| `billingDays` | `{}` | 플랜마다 매달 결제되는 날. 예: `{"codex": 16, "claude": 3}`. Claude 계정이 둘이면 `claude1`, `claude2` |
+| `notchMode` | `false` | 맥북 카메라 노치 안에 숨었다가 마우스를 올릴 때만 펼친다 |
 | `displayID` | `null` | 레일을 붙일 디스플레이. `null`이면 주 화면 |
 | `edge` | `"left"` | 붙을 변: `left`, `top`, `right` |
 | `anchor` | `0.5` | 그 변에서의 위치. `0`=시작, `1`=끝 |
 
-고치고 나서 메뉴바 → **설정 다시 읽기**.
+고치고 나서 바로 메뉴바 → **설정 다시 읽기**. 실행 중인 앱이 가끔 자기 설정을
+다시 저장하는데, 아직 읽지 않은 수정은 그때 덮어써진다.
 
 ### 예산을 내 사용량에 맞추기
 

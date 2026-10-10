@@ -21,6 +21,9 @@ enum L {
     static var left: String { pick("남음", "left") }
     static var noActiveWindow: String { pick("활성 5시간 창 없음", "No active 5-hour window") }
     static var noCodexSession: String { pick("최근 Codex 세션 없음", "No recent Codex session") }
+    static func notReadYet(_ name: String) -> String {
+        pick("\(name) 사용량을 아직 읽지 못함", "\(name) usage not read yet")
+    }
     static var measuringLimit: String { pick("내 한도 측정 중", "Working out your limit") }
 
     // Memory
@@ -88,8 +91,16 @@ enum L {
     static func limitWindow(_ label: String, resetAt stamp: String) -> String {
         pick("\(label) 한도 · 초기화 \(stamp)", "\(label) limit · resets \(stamp)")
     }
+    static func resetsAt(_ stamp: String) -> String {
+        pick("초기화 \(stamp)", "Resets \(stamp)")
+    }
     static func inTime(_ duration: String) -> String {
         pick("\(duration) 후", "in \(duration)")
+    }
+    static var nextBilling: String { pick("다음 결제", "Next bill") }
+    static var billingAndReset: String { pick("결제·초기화", "Bills & resets") }
+    static func dDay(_ days: Int) -> String {
+        days == 0 ? pick("오늘", "Today") : pick("D-\(days)", "in \(days)d")
     }
     static func secondaryLeft(_ label: String, _ percent: String) -> String {
         pick("\(label) \(percent) 남음", "\(label) \(percent) left")
@@ -110,11 +121,27 @@ enum L {
 
     /// Weekday in the reset stamp is what makes a date five days out legible.
     static var dateFormat: String { pick("M/d(E) HH:mm", "MMM d (E) HH:mm") }
+    static var dayFormat: String { pick("M/d(E)", "MMM d (E)") }
     static func today(_ time: String) -> String { pick("오늘 \(time)", "today \(time)") }
     static var localeIdentifier: String { pick("ko_KR", "en_US") }
 
+    // Meetily recorder
+    static func recorder(_ status: MeetilyRecorder.Status) -> String {
+        switch status {
+        case .recording: return pick("녹음 중 · Meetily 열기", "Recording · Open Meetily")
+        case .paused:    return pick("일시정지 · Meetily 열기", "Paused · Open Meetily")
+        case .notRunning, .noPermission, .idle, .busy: return pick("Meetily 열기", "Open Meetily")
+        }
+    }
+
+    static var recordingNow: String { pick("녹음 중", "Recording") }
+    static var recordingPaused: String { pick("녹음 일시정지", "Recording paused") }
+    static var stopRecording: String { pick("녹음 정지", "Stop Recording") }
+    static var openMeetily: String { pick("Meetily 열기", "Open Meetily") }
+
     // Menu bar
     static var refreshNow: String { pick("지금 새로고침", "Refresh Now") }
+    static var hideInNotch: String { pick("노치에 숨기기", "Hide in the notch") }
     static var moveToCursorScreen: String {
         pick("커서가 있는 화면으로 옮기기", "Move to Display with Cursor")
     }

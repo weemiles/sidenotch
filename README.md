@@ -1,7 +1,8 @@
 # SideNotch
 
 A notch that grows out of the **edge** of your Mac screen, showing how much of
-your Claude Code and Codex allowance is left. Drag it and it slides along the
+your Claude Code, Codex, Grok Bot and Cursor allowance is left, how full your
+memory is, and how many days until each plan bills again. Drag it and it slides along the
 left, top and right edges, turning the corners as it goes. Hover a logo and it stretches
 sideways with the details. Drop apps on it and they become launchers.
 
@@ -49,9 +50,18 @@ Installs to `/Applications/SideNotch.app` and launches it. The menu bar icon has
 
 `./build.sh` alone just produces `build/SideNotch.app` without installing.
 
-The app is ad-hoc signed on your machine, so Gatekeeper leaves it alone. It is
-not sandboxed and asks for no permissions — it only reads files in your home
-directory.
+The app is signed on your machine — with your Apple Development certificate if
+you have one, ad-hoc otherwise — so Gatekeeper leaves it alone. It is not
+sandboxed. Everything works without extra permissions; two optional prompts
+unlock more:
+
+- **Keychain** — macOS asks once whether SideNotch may use "Grok Bot Safe
+  Storage". Allow it for the Grok Bot gauge when Cursor is not signed in.
+- **Accessibility** — needed only to start and stop Meetily from the record
+  button. Without it the button still shows whether Meetily is recording.
+
+Use different AIs? Turn off the gauges you do not need with the `show…` keys in
+[Settings](#settings). A gauge whose app is missing just shows `–`.
 
 ## Reading the gauges
 
@@ -68,14 +78,23 @@ Like a battery: the arc shows what is **left**.
 | Shown | Source | Accuracy |
 |---|---|---|
 | Codex usage and reset time | `~/.codex/sessions/**/rollout-*.jsonl` → `rate_limits` | **exact** — the server sends it every turn |
+| Claude session, weekly and per-model limits | `api.anthropic.com/api/oauth/usage`, with the login Claude Code keeps in the keychain | **exact** — the same figures `/usage` shows |
+| Claude 5-hour window (fallback) | `~/.claude/projects/**/*.jsonl` → `message.usage` | **estimate** |
+| Grok Bot allowance | Cursor dashboard API (`GetSandUsageStatus`), with Cursor's login or Grok Bot's own | **exact** — what Grok Bot's usage pane shows |
+| Cursor allowance and billing date | Cursor dashboard API (`GetCurrentPeriodUsage`) | **exact** |
+| Memory | `host_statistics64`, counted the way Activity Monitor does | **exact** |
+| Next bill (Claude, Codex) | `billingDays` in the config — the day of the month you are billed | as entered |
 
 The gauge shows whichever Codex window has the least left — the one about to
 stop you — and the panel lists the rest. Codex reports several (five-hour,
 weekly, monthly) and which one lands in `primary` is not stable, so reading only
 `primary` can show a barely-touched five-hour window while the weekly quota is
 nearly gone.
-| Claude session, weekly and per-model limits | `api.anthropic.com/api/oauth/usage`, with the login Claude Code keeps in the keychain | **exact** — the same figures `/usage` shows |
-| Claude 5-hour window (fallback) | `~/.claude/projects/**/*.jsonl` → `message.usage` | **estimate** |
+
+Grok Bot bills on its Cursor account, so its panel shows the Cursor billing
+date. The Claude and Codex logins carry no billing date SideNotch reads, so you
+enter the day once: ChatGPT shows it under Settings → Plan, Claude under
+Settings → Billing.
 
 The Claude gauge asks Anthropic for the account's own limits once a minute —
 the numbers `/usage` prints — and shows the weekly limit across all models — how much of
@@ -164,6 +183,10 @@ Drag an app from Finder or the Dock onto the rail and it lands under the gauges.
 
 Paths live in `shortcuts` in the config. Icons dim when the app is gone.
 
+If [Meetily](https://meetily.ai) is installed, a record button joins the
+shortcuts. It turns red while Meetily is recording; click it to open Meetily.
+It can be dragged into a different position but not removed.
+
 The sideways panel is sized to the gauge rows only, so shortcuts lengthen the
 rail without lengthening what pops out.
 
@@ -176,13 +199,17 @@ rail without lengthening what pops out.
 | `claudeFiveHourBudgetUSD` | *(auto)* | Where the Claude gauge reads empty. Omit it to derive from your history |
 | `fastPollSeconds` | `2` | Live sessions and the Codex tail |
 | `slowPollSeconds` | `20` | Claude token log scan |
-| `showClaude` / `showCodex` | `true` | Which gauges to show |
+| `showClaude` / `showCodex` / `showGrok` / `showCursor` / `showMemory` | `true` | Which gauges to show |
+| `billingDays` | `{}` | Day of the month each plan bills, e.g. `{"codex": 16, "claude": 3}`. With two Claude accounts use `claude1`, `claude2` |
+| `notchMode` | `false` | Hide inside the MacBook camera notch and grow out only while the pointer is on it |
 | `displayID` | `null` | Which display; `null` means the primary one |
 | `edge` | `"left"` | Which edge: `left`, `top` or `right` |
 | `anchor` | `0.5` | Position along that edge; `0` start, `1` end |
 | `shortcuts` | `[]` | Dropped apps |
 
-Menu bar → **설정 다시 읽기** to apply edits.
+Menu bar → **설정 다시 읽기** to apply edits. Choose it right after saving the
+file: the running app writes its own copy back now and then, and that copy
+replaces edits it has not read yet.
 
 ## Controls
 

@@ -14,9 +14,24 @@ struct WidgetBody: View {
             if spec.id == "memory" {
                 MemoryBody(usage: store.memory, shown: shown, onQuit: store.refreshMemory)
             } else if let account = store.claude.first(where: { spec.id == "claude:\($0.id)" }) {
-                ClaudeBody(usage: account, shown: shown)
+                ClaudeBody(usage: account, shown: shown,
+                           billingAt: store.config.nextBilling("claude\(account.label)")
+                               ?? store.config.nextBilling("claude"))
+            } else if spec.id == "grok" {
+                AllowanceBody(title: "Grok Bot",
+                              // Grok Bot is billed on the same account's Cursor cycle.
+                              reading: store.grok.map { .init(usedPercent: $0.usedPercent, resetsAt: $0.resetsAt,
+                                                              note: $0.planLabel, updatedAt: $0.updatedAt,
+                                                              billingAt: store.cursor?.resetsAt) },
+                              shown: shown)
+            } else if spec.id == "cursor" {
+                AllowanceBody(title: "Cursor",
+                              reading: store.cursor.map { .init(usedPercent: $0.usedPercent, resetsAt: $0.resetsAt,
+                                                                note: nil, updatedAt: $0.updatedAt,
+                                                                billingAt: $0.resetsAt) },
+                              shown: shown)
             } else {
-                CodexBody(usage: store.codex, shown: shown)
+                CodexBody(usage: store.codex, shown: shown, billingAt: store.config.nextBilling("codex"))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -50,6 +65,7 @@ private struct Row<Content: View>: View {
 private struct ClaudeBody: View {
     let usage: ClaudeUsage
     let shown: Bool
+    let billingAt: Date?
 
     var body: some View {
         Row(index: 0, shown: shown) {
@@ -157,7 +173,7 @@ private struct ClaudeBody: View {
                     .foregroundStyle(Theme.textTertiary)
             }
         }
-
+        BillingRow(billingAt: billingAt, shown: shown)
     }
 
     private func basisLine(_ basis: ClaudeBudgetBasis) -> String {
@@ -460,6 +476,7 @@ private struct FittingStack: Layout {
 private struct CodexBody: View {
     let usage: CodexUsage
     let shown: Bool
+    let billingAt: Date?
 
     var body: some View {
         Row(index: 0, shown: shown) {
@@ -516,11 +533,123 @@ private struct CodexBody: View {
                     .foregroundStyle(Theme.textTertiary)
             }
         }
+        BillingRow(billingAt: billingAt, shown: shown)
+    }
+}
 
+// MARK: - Grok Bot, Cursor
+
+/// One allowance read straight from the account: a percentage and a reset.
+private struct AllowanceBody: View {
+    struct Reading {
+        var usedPercent: Double
+        var resetsAt: Date?
+        var note: String?
+        var updatedAt: Date
+        /// End of the billing cycle, when the next bill lands.
+        var billingAt: Date?
+
+        var remaining: Double { max(0, min(1, 1 - usedPercent / 100)) }
+    }
+
+    let title: String
+    let reading: Reading?
+    let shown: Bool
+
+    var body: some View {
+        Row(index: 0, shown: shown) {
+            Header(title: title, trailing: reading.map { Fmt.ago($0.updatedAt) })
+        }
+
+        if let usage = reading {
+            Row(index: 1, shown: shown) {
+                Meter(remaining: usage.remaining, color: Theme.tint(remaining: usage.remaining))
+            }
+            Row(index: 2, shown: shown) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(Fmt.percent(usage.remaining))
+                        .font(.system(size: 17, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textPrimary)
+                    Text(L.left)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                    Spacer(minLength: 0)
+                    Text(L.used(Fmt.percent(usage.usedPercent / 100)))
+                        .font(.system(size: 10))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            // Cursor's allowance resets on the day it bills: one line says both.
+            let billsAtReset = usage.billingAt != nil && usage.billingAt == usage.resetsAt
+            if !billsAtReset || usage.note != nil {
+                Row(index: 3, shown: shown) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if !billsAtReset,
+                           let at = Fmt.resetStamp(usage.resetsAt),
+                           let left = Fmt.remaining(until: usage.resetsAt) {
+                            Text(L.resetsAt(at))
+                                .font(.system(size: 10))
+                                .foregroundStyle(Theme.textSecondary)
+                            Text(L.inTime(left))
+                                .font(.system(size: 10))
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        if let note = usage.note {
+                            Text(note)
+                                .font(.system(size: 10))
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                    }
+                }
+            }
+            BillingRow(billingAt: usage.billingAt,
+                       label: billsAtReset ? L.billingAndReset : L.nextBilling,
+                       shown: shown)
+        } else {
+            Row(index: 1, shown: shown) {
+                Text(L.notReadYet(title))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
     }
 }
 
 // MARK: - Shared
+
+/// "다음 결제  10/16(금) ······ D-6", set apart under a hairline so the days
+/// left read at a glance. Turns to the warning colour in the last three days.
+private struct BillingRow: View {
+    let billingAt: Date?
+    var label: String = L.nextBilling
+    let shown: Bool
+
+    var body: some View {
+        if let date = billingAt, let days = Fmt.daysUntil(date) {
+            Row(index: 6, shown: shown) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Rectangle().fill(Theme.hairline).frame(height: 1)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(label)
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textTertiary)
+                        Text(Fmt.dayStamp(date))
+                            .font(.system(size: 11, weight: .medium))
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.textSecondary)
+                        Spacer(minLength: 0)
+                        Text(L.dDay(days))
+                            .font(.system(size: 13, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(days <= 3 ? Theme.warn : Theme.textPrimary)
+                    }
+                }
+            }
+        }
+    }
+}
 
 private struct Header: View {
     let title: String

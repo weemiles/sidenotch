@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds SideNotch.app. Ad-hoc signed — it never leaves this machine.
+# Builds SideNotch.app. Signed locally — it never leaves this machine.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -30,5 +30,10 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
-codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+# An ad-hoc signature changes with every build, and macOS then forgets the
+# Accessibility and Keychain grants. A local development certificate keeps
+# the same identity across builds, so use one when the machine has it.
+IDENTITY="${SIDENOTCH_SIGN_IDENTITY:-$(security find-identity -p codesigning -v 2>/dev/null \
+  | awk -F'"' '/Apple Development/ { print $2; exit }')}"
+codesign --force --sign "${IDENTITY:--}" "$APP" >/dev/null 2>&1 || true
 echo "built: $(pwd)/$APP"

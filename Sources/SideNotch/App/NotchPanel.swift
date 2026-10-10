@@ -106,6 +106,20 @@ final class PanelState: ObservableObject {
     @Published var pulling: String?
     @Published var pullOffset: CGSize = .zero
 
+    /// Notch mode: whether the rail has grown out of the camera notch.
+    @Published var revealed = false
+    /// The camera housing, measured by the controller from the screen. Collapsed,
+    /// the shape is exactly this, so it disappears into the hardware notch.
+    @Published var notchSize = CGSize(width: 200, height: 32)
+    private var conceal: Task<Void, Never>?
+    /// Whether the pointer is over the rail right now, asked of the window.
+    /// SwiftUI reports a hover-out whenever the shape resizes under a still
+    /// pointer, so that signal alone cannot be trusted to fold it away.
+    var pointerInside: (() -> Bool)?
+    /// Whether the pointer is well inside the camera housing, asked of the screen.
+    var pointerInNotch: (() -> Bool)?
+    private var pendingReveal: Task<Void, Never>?
+
     /// Wired up by the controller; SwiftUI has no way to move an NSWindow.
     var dragBegan: (() -> Void)?
     var dragEnded: (() -> Void)?
@@ -162,24 +176,89 @@ final class PanelState: ObservableObject {
     /// the same "drag it off the Dock" gesture, so it needs no explanation.
     static let pullOutThreshold: CGFloat = 46
 
-    var pullingOut: Bool { abs(pullOffset.width) > Self.pullOutThreshold }
+    /// Which way the rail runs while an icon is held. Travel across it pulls the
+    /// icon out; travel along it reorders, the way icons move in the Dock.
+    private(set) var pullAxis: Axis = .vertical
+    /// Slots the held icon has moved along the rail since the drag began.
+    @Published private(set) var pullShift = 0
 
-    func beginPull(_ id: String) {
+    var pullingOut: Bool {
+        abs(pullAxis == .vertical ? pullOffset.width : pullOffset.height) > Self.pullOutThreshold
+    }
+
+    func beginPull(_ id: String, axis: Axis) {
         guard pulling != id else { return }
         collapse?.cancel()
         active = nil
         pulling = id
+        pullAxis = axis
         pullOffset = .zero
+        pullShift = 0
     }
 
     func updatePull(_ offset: CGSize) { pullOffset = offset }
+
+    func updateShift(_ shift: Int) { pullShift = shift }
 
     /// Returns true when the icon travelled far enough to be dropped.
     func endPull() -> Bool {
         let removed = pullingOut
         pulling = nil
         pullOffset = .zero
+        pullShift = 0
         return removed
+    }
+
+    /// Grows out of the notch only for a pointer that has settled inside it —
+    /// one passing on its way to the menu bar either side must not open a panel
+    /// that then sits on top of what it was heading for.
+    func reveal() {
+        conceal?.cancel()
+        conceal = nil
+        guard !revealed else { return }
+        pendingReveal?.cancel()
+        // Watched for as long as the pointer is over the shape (a hover-out
+        // cancels this), so one that comes in over the flare and then moves
+        // onto the housing itself still opens it.
+        pendingReveal = Task { [weak self] in
+            while !Task.isCancelled, let self {
+                if self.pointerInNotch?() ?? true {
+                    self.trace("reveal")
+                    self.revealed = true
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+    }
+
+    /// Folds back into the notch once the pointer has really gone — a short
+    /// grace period so skimming the edge of the rail does not make it flicker —
+    /// and never while something inside it is still in use.
+    func concealSoon() {
+        guard conceal == nil else { return }   // one countdown at a time
+        trace("conceal soon")
+        pendingReveal?.cancel()
+        conceal = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            // Still on it: keep checking until the pointer has really left.
+            while !Task.isCancelled, self?.pointerInside?() == true {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+            // A cancelled countdown was already cleared by whoever cancelled it.
+            guard !Task.isCancelled, let self else { return }
+            self.conceal = nil
+            guard self.pulling == nil, !self.dragging, !self.dropTargeting else { return }
+            // Once the window passes the mouse through, SwiftUI never hears the
+            // hover-out, so an open panel (or a pin) would hold the rail open
+            // forever. The pointer has really left: close it here.
+            self.collapse?.cancel()
+            self.collapse = nil
+            self.pinned = nil
+            self.active = nil
+            self.trace("concealed")
+            self.revealed = false
+        }
     }
 
     func togglePin(_ id: String) {

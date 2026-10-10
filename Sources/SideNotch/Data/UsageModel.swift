@@ -134,6 +134,24 @@ enum Fmt {
         return f.string(from: date)
     }
 
+    /// Calendar days to a bill, since the hour it lands on tells you nothing.
+    /// `nil` once the date has passed.
+    static func daysUntil(_ date: Date, from now: Date = Date()) -> Int? {
+        let cal = Calendar.current
+        guard let days = cal.dateComponents([.day], from: cal.startOfDay(for: now),
+                                            to: cal.startOfDay(for: date)).day,
+              days >= 0 else { return nil }
+        return days
+    }
+
+    /// "10/28(수)"
+    static func dayStamp(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: L.localeIdentifier)
+        f.dateFormat = L.dayFormat
+        return f.string(from: date)
+    }
+
     static func ago(_ date: Date, from now: Date = Date()) -> String {
         let s = Int(now.timeIntervalSince(date))
         if s < 10 { return L.justNow }
