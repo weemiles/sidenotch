@@ -8,6 +8,18 @@ sideways with the details. Drop apps on it and they become launchers.
 
 **[한국어 README](README.ko.md)**
 
+## Download
+
+**[Download SideNotch.zip](https://github.com/weemiles/sidenotch/releases/latest/download/SideNotch.zip)**
+— macOS 14+, Intel and Apple silicon. No Xcode needed.
+
+1. Open the zip and move **SideNotch** to Applications.
+2. Open it. macOS warns that it cannot check the app — close the warning.
+3. System Settings → Privacy & Security → **Open Anyway** next to SideNotch.
+
+The app is not notarized, so macOS asks this once. To build it yourself, see
+[Build from source](#build-from-source).
+
 ![SideNotch idle and expanded](docs/hero.png)
 
 Docked to any of three edges — it rotates to match, and the detail opens away
@@ -35,7 +47,7 @@ Codex writes the server's own verdict into its rollout log on every turn, and
 Claude Code records token usage for every message. This reads those files and
 puts the number where you can see it without breaking flow.
 
-## Install
+## Build from source
 
 Requires macOS 14+ and Xcode (for the Swift toolchain).
 
@@ -93,8 +105,7 @@ nearly gone.
 
 Grok Bot bills on its Cursor account, so its panel shows the Cursor billing
 date. The Claude and Codex logins carry no billing date SideNotch reads, so you
-enter the day once: ChatGPT shows it under Settings → Plan, Claude under
-Settings → Billing.
+enter the day once. ChatGPT and Claude both show it in their account settings.
 
 The Claude gauge asks Anthropic for the account's own limits once a minute —
 the numbers `/usage` prints — and shows the weekly limit across all models — how much of

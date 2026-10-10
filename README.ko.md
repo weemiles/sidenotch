@@ -7,6 +7,17 @@
 
 **[English README](README.md)**
 
+## 다운로드
+
+**[SideNotch.zip 받기](https://github.com/weemiles/sidenotch/releases/latest/download/SideNotch.zip)**
+— macOS 14 이상, 인텔·애플 실리콘 모두. Xcode 필요 없음.
+
+1. zip을 열고 **SideNotch**를 응용 프로그램 폴더로 옮긴다.
+2. 앱을 연다. "확인할 수 없습니다" 경고가 뜨면 닫는다.
+3. 시스템 설정 → 개인정보 보호 및 보안 → SideNotch 옆 **그래도 열기**.
+
+공증받지 않은 앱이라 처음 한 번만 묻는다. 직접 빌드하려면 [직접 빌드하기](#직접-빌드하기)를 본다.
+
 ![기본 상태와 펼친 상태](docs/hero-ko.png)
 
 세 변 중 어디에든 붙는다. 붙은 변에 맞춰 회전하고, 상세는 화면 안쪽으로 열린다.
@@ -95,7 +106,7 @@ Finder나 Dock에서 앱을 끌어다 레일 위에 놓으면 게이지 아래�
 로고를 감싼 호(arc)는 아래가 트여 있고, 남은 양이 줄면 시계 반대 방향으로
 짧아진다.
 
-## 설치
+## 직접 빌드하기
 
 macOS 14 이상, Swift 툴체인(Xcode) 필요.
 
@@ -135,8 +146,8 @@ cd sidenotch
 | 다음 결제일 (Claude, Codex) | 설정의 `billingDays` — 매달 결제되는 날짜 | 입력한 대로 |
 
 Grok Bot은 Cursor 계정으로 결제되므로 Cursor 결제일을 보여준다. Claude와 Codex
-로그인 정보에는 SideNotch가 읽는 결제일이 없어서 날짜를 한 번 적어 둔다. ChatGPT는
-설정 → 플랜, Claude는 설정 → 결제에서 확인할 수 있다.
+로그인 정보에는 SideNotch가 읽는 결제일이 없어서 날짜를 한 번 적어 둔다. ChatGPT와
+Claude 모두 계정 설정에서 결제일을 볼 수 있다.
 
 Claude 링은 1분마다 계정의 실제 한도를 Anthropic에 물어본다 — `/usage`가 보여주는
 바로 그 값이다. 링에는 이번 주에 남은 양, 즉 전체 모델 주간 한도를 표시하고, 5시간
