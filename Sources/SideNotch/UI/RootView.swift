@@ -107,7 +107,7 @@ struct RootView: View {
                 ))
             }
         }
-        if store.config.showCodex {
+        if store.showsCodex {
             let p = store.codex.headline
             out.append(WidgetSpec(
                 id: "codex",
@@ -119,7 +119,7 @@ struct RootView: View {
                 app: "/Applications/ChatGPT.app"
             ))
         }
-        if store.config.showGrok {
+        if store.showsGrok {
             let g = store.grok
             out.append(WidgetSpec(
                 id: "grok",
@@ -132,7 +132,7 @@ struct RootView: View {
                 app: "/Applications/Grok Bot.app"
             ))
         }
-        if store.config.showCursor {
+        if store.showsCursor {
             let c = store.cursor
             out.append(WidgetSpec(
                 id: "cursor",

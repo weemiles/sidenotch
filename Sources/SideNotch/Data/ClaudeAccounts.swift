@@ -24,7 +24,8 @@ enum ClaudeAccounts {
     static var defaultConfigDir: URL { home.appendingPathComponent(".claude") }
 
     /// `~/.claude` first, then any `~/.claude-*` beside it, in name order.
-    /// One account is the normal case and gets no label at all.
+    /// One account is the normal case and gets no label at all; none at all
+    /// means Claude Code has never signed in here, and there is no gauge.
     static func discover(configured: [String]?) -> [ClaudeAccount] {
         let dirs = configured.map { $0.map { expand($0) } } ?? found()
         let multiple = dirs.count > 1
@@ -36,23 +37,23 @@ enum ClaudeAccounts {
     }
 
     private static func found() -> [URL] {
-        var out = [defaultConfigDir]
         let fm = FileManager.default
+        // A directory only counts once something has actually logged in
+        // there; an empty one would sit on the rail as a permanent dash.
+        // `projects` appears on the first session, `.claude.json` at login,
+        // so a freshly added account shows up straight away.
+        let signedIn = { (dir: URL) in
+            fm.fileExists(atPath: dir.appendingPathComponent("projects").path)
+                || fm.fileExists(atPath: stateFile(for: dir).path)
+        }
+        var out = signedIn(defaultConfigDir) ? [defaultConfigDir] : []
         let siblings = (try? fm.contentsOfDirectory(at: home,
                                                     includingPropertiesForKeys: [.isDirectoryKey],
                                                     options: [])) ?? []
         out += siblings
             .filter { $0.lastPathComponent.hasPrefix(".claude-") }
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
-            // A directory only counts once something has actually logged in
-            // there; an empty one would sit on the rail as a permanent dash.
-            // `projects` appears on the first session, `.claude.json` at login,
-            // so a freshly added account shows up straight away.
-            .filter { dir in
-                ["projects", ".claude.json"].contains {
-                    fm.fileExists(atPath: dir.appendingPathComponent($0).path)
-                }
-            }
+            .filter(signedIn)
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         return out
     }

@@ -15,6 +15,14 @@ final class UsageStore: ObservableObject {
     @Published private(set) var cursor: CursorUsage?
     @Published private(set) var memory = MemoryUsage()
     @Published private(set) var config = Config.load()
+    /// AI apps found on this Mac, looked for again with every slow poll.
+    @Published private(set) var installed = Installed.scan()
+
+    /// A gauge goes on the rail only when it is switched on and its app is
+    /// here; Claude's accounts are found the same way, one gauge each.
+    var showsCodex: Bool { config.showCodex && installed.codex }
+    var showsGrok: Bool { config.showGrok && installed.grok }
+    var showsCursor: Bool { config.showCursor && installed.cursor }
 
     private var accounts: [ClaudeAccount] = []
     /// Codex as the account reports it. Preferred over the logs, which only
@@ -345,6 +353,8 @@ final class UsageStore: ObservableObject {
 
     /// Expensive on first run, incremental afterwards.
     private func pollSlow() {
+        let found = Installed.scan()
+        if found != installed { installed = found }
         guard !scanning else { return }
         scanning = true
         let watched = accounts

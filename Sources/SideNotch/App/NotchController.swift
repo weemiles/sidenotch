@@ -22,6 +22,8 @@ final class NotchController {
     /// Claude accounts are found after launch; each is a gauge, so the window
     /// is re-sized when the count changes.
     private var accountWatch: AnyCancellable?
+    /// An AI app installed or removed adds or drops a gauge the same way.
+    private var installWatch: AnyCancellable?
     private var mouseMonitors: [Any] = []
 
     init(store: UsageStore) {
@@ -119,6 +121,11 @@ final class NotchController {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.reposition() }
+        installWatch = store.$installed
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.reposition() }
     }
 
     func reposition(animated: Bool = false) {
@@ -209,8 +216,8 @@ final class NotchController {
     /// spills out of it off-centre.
     private var visibleRows: Int {
         let c = store.config
-        return (c.showClaude ? max(store.claude.count, 1) : 0) + (c.showCodex ? 1 : 0)
-            + (c.showMemory ? 1 : 0) + (c.showGrok ? 1 : 0) + (c.showCursor ? 1 : 0)
+        return (c.showClaude ? store.claude.count : 0) + (store.showsCodex ? 1 : 0)
+            + (c.showMemory ? 1 : 0) + (store.showsGrok ? 1 : 0) + (store.showsCursor ? 1 : 0)
     }
 
     // MARK: Dragging

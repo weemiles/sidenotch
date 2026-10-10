@@ -72,8 +72,9 @@ unlock more:
 - **Accessibility** — needed only to start and stop Meetily from the record
   button. Without it the button still shows whether Meetily is recording.
 
-Use different AIs? Turn off the gauges you do not need with the `show…` keys in
-[Settings](#settings). A gauge whose app is missing just shows `–`.
+Only the AI apps on this Mac get a gauge. The rest stay off the rail and show
+up once installed. To hide one you do have, set its `show…` key in
+[Settings](#settings) to `false`.
 
 ## Reading the gauges
 
