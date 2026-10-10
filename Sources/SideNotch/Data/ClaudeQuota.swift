@@ -119,9 +119,9 @@ enum ClaudeQuotaReader {
     /// Claude Code names the item after the config directory it was pointed at:
     /// the default directory gets the bare name, any other gets the first eight
     /// hex digits of the SHA-256 of its path appended.
-    private static func service(for account: ClaudeAccount) -> String {
+    private static func service(for configDir: URL) -> String {
         let base = "Claude Code-credentials"
-        let dir = account.configDir.path
+        let dir = configDir.path
         guard dir != ClaudeAccounts.defaultConfigDir.path else { return base }
         return "\(base)-\(String(sha256Hex(dir).prefix(8)))"
     }
@@ -131,13 +131,19 @@ enum ClaudeQuotaReader {
     /// access list and reading it raises no keychain prompt.
     private static func accessToken(for account: ClaudeAccount) -> String? {
         guard let out = run("/usr/bin/security",
-                            ["find-generic-password", "-s", service(for: account), "-w"]),
+                            ["find-generic-password", "-s", service(for: account.configDir), "-w"]),
               let obj = try? JSONSerialization.jsonObject(with: out) as? [String: Any],
               let oauth = obj["claudeAiOauth"] as? [String: Any],
               let token = oauth["accessToken"] as? String else { return nil }
         if let expires = (oauth["expiresAt"] as? NSNumber)?.doubleValue,
            Date(timeIntervalSince1970: expires / 1000) < Date() { return nil }
         return token
+    }
+
+    /// Whether Claude Code has signed in from this directory. Only the item's
+    /// attributes are looked up, never its secret, so this raises no prompt.
+    static func hasLogin(configDir: URL) -> Bool {
+        run("/usr/bin/security", ["find-generic-password", "-s", service(for: configDir)]) != nil
     }
 
     // MARK: Plumbing

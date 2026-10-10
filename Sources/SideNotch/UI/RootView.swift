@@ -349,14 +349,17 @@ struct RootView: View {
                 }
                 .padding(.leading, Metrics.wingPadInner)
                 .frame(width: wings.right, alignment: .leading)
-                .background(GeometryReader { geo in
-                    Color.clear.preference(key: DropRectKey.self,
-                                           value: geo.frame(in: .named("root")))
-                })
                 .animation(Motion.gooey, value: shortcuts)
             }
             .padding(.top, Metrics.wingPadTop)
             .frame(height: strip, alignment: .top)
+            // The whole strip takes a drop, not just the shortcut wing: with no
+            // shortcuts yet that wing is zero wide and the first app had
+            // nowhere to land.
+            .background(GeometryReader { geo in
+                Color.clear.preference(key: DropRectKey.self,
+                                       value: geo.frame(in: .named("root")))
+            })
 
             if let spec = displayedSpec {
                 WidgetBody(spec: spec, store: store)

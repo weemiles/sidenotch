@@ -38,14 +38,10 @@ enum ClaudeAccounts {
 
     private static func found() -> [URL] {
         let fm = FileManager.default
-        // A directory only counts once something has actually logged in
-        // there; an empty one would sit on the rail as a permanent dash.
-        // `projects` appears on the first session, `.claude.json` at login,
-        // so a freshly added account shows up straight away.
-        let signedIn = { (dir: URL) in
-            fm.fileExists(atPath: dir.appendingPathComponent("projects").path)
-                || fm.fileExists(atPath: stateFile(for: dir).path)
-        }
+        // A directory only counts while Claude Code is signed in from it; one
+        // without a login would sit on the rail as a permanent dash. Other
+        // apps leave `~/.claude` behind too, so the folder alone proves nothing.
+        let signedIn = { (dir: URL) in ClaudeQuotaReader.hasLogin(configDir: dir) }
         var out = signedIn(defaultConfigDir) ? [defaultConfigDir] : []
         let siblings = (try? fm.contentsOfDirectory(at: home,
                                                     includingPropertiesForKeys: [.isDirectoryKey],

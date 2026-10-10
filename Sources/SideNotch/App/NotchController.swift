@@ -55,6 +55,11 @@ final class NotchController {
         view.registerForDraggedTypes([.fileURL])
         view.onDropTargeting = { [weak self] targeting in
             guard let self else { return }
+            // Folded into the notch there is no slot to aim at, so an app
+            // carried over it opens the island to show where it will land.
+            if targeting && self.store.config.notchMode && !self.state.revealed {
+                self.state.reveal()
+            }
             withAnimation(Motion.gooey) { self.state.dropTargeting = targeting }
         }
         view.onDrop = { [weak self] urls in

@@ -190,6 +190,7 @@ Drag an app from Finder or the Dock onto the rail and it lands under the gauges.
 | Action | Result |
 |---|---|
 | Drop an app on the rail | Added. The rail stretches and the icon springs into place |
+| In notch mode, carry an app over the notch | The island opens with an empty slot right of the notch; drop it anywhere on the island |
 | Click an icon | Launches it |
 | Drag an icon 46pt sideways and release | Removed, the way you drag things off the Dock |
 
